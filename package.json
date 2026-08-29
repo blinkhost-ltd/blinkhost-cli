@@ -1,0 +1,18 @@
+{
+  "name": "@blinkhost/cli",
+  "version": "1.0.0",
+  "description": "Secure project scaffolding and validation for BlinkHost",
+  "type": "module",
+  "bin": { "blinkhost": "dist/cli.js" },
+  "files": ["dist/*.js", "dist/*.d.ts", "README.md", "LICENSE"],
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "prepack": "npm test"
+  },
+  "dependencies": { "yaml": "2.9.0" },
+  "devDependencies": { "@types/node": "20.19.24", "typescript": "5.9.3" },
+  "license": "MIT",
+  "publishConfig": { "access": "public", "provenance": true }
+}
