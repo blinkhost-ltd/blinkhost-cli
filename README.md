@@ -6,12 +6,14 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 
 Node.js 22.12 or newer is required.
 
+Install the signed release archive directly from BlinkHost's public repository:
+
 ```bash
-npm install --global @blinkhost/cli
+npm install --global https://github.com/blinkhost-ltd/blinkhost-cli/releases/download/v2.0.0/blinkhost-cli-2.0.0.tgz
 blinkhost --version
 ```
 
-Release archives and checksums are also published at <https://github.com/blinkhost-ltd/blinkhost-cli/releases>.
+Checksums, the CycloneDX SBOM, and Sigstore verification bundle are published with the archive at <https://github.com/blinkhost-ltd/blinkhost-cli/releases/tag/v2.0.0>.
 
 ## Connect an account
 
