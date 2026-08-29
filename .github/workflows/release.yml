@@ -13,6 +13,7 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    environment: npm-production
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -47,6 +48,8 @@ jobs:
       - name: Sign release evidence with Sigstore
         run: |
           cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+      - name: Publish package to npm
+        run: npx --yes npm@11.6.0 publish --access public --provenance
       - name: Publish immutable GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
