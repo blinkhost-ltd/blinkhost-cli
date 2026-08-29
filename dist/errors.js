@@ -1,4 +1,4 @@
-export const EXIT = { success: 0, usage: 2, validation: 3, filesystem: 4, internal: 5 };
+export const EXIT = { success: 0, usage: 2, validation: 3, filesystem: 4, internal: 5, auth: 6, network: 7, remote: 8, conflict: 9 };
 export class CliError extends Error {
     exitCode;
     code;

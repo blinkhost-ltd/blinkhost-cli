@@ -1,0 +1,23 @@
+name: BlinkHost validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - run: npm install --global @blinkhost/cli@2
+      - run: blinkhost validate --json
+      - run: blinkhost ci check --json
