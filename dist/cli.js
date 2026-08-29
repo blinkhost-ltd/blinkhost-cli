@@ -13,45 +13,8 @@ import { login, logout } from './auth.js';
 import { activeProfile, readConfig, validateProfileName, writeConfig } from './config.js';
 import { openPreview, projectStatus, rawApi, readProjectLink, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
 import { checkForUpdate, ciCheck, completion, observability, runDev, runPlugins, supportBundle, testProject } from './workflows.js';
-const VERSION = '2.0.0';
-const HELP = `BlinkHost CLI ${VERSION}
-
-Usage:
-  blinkhost create <project-name> [--template react] [--package-manager npm]
-                 [--module name:python] [--database APP_DB] [--no-install]
-  blinkhost init [path] [--force]
-  blinkhost validate [path]
-  blinkhost manifest [path]
-  blinkhost doctor [path]
-  blinkhost test [path]
-  blinkhost auth login|logout|status|sessions|revoke
-  blinkhost projects list|get|create|update|delete|action|link|current
-  blinkhost repositories|connections|previews|builds|deployments <action>
-  blinkhost modules|databases|bindings|assets|secrets <action>
-  blinkhost organizations|templates|approvals|handoffs|policies|workloads <action>
-  blinkhost dev [path] [--host HOST] [--port PORT]
-  blinkhost logs|metrics|analytics --project PROJECT_ID
-  blinkhost support bundle [--output PATH]
-  blinkhost completion bash|zsh|fish
-  blinkhost update check
-  blinkhost ci check
-  blinkhost plugins list|add|remove|verify|run
-  blinkhost api METHOD /api/customer/path/ [--data JSON_OR_@FILE]
-
-Global options:
-  --json       Return machine-readable output
-  --profile    Use a named account and API profile
-  --quiet      Suppress successful human-readable output
-  --verbose    Include safe diagnostic detail in errors
-  --no-color   Disable terminal colour (accepted for portable scripts)
-  --non-interactive  Never open a browser or prompt
-  --help       Show command help
-  --version    Show the CLI version
-
-Refresh credentials are stored only by the operating-system credential service.
-BlinkHost remains authoritative for roles, plan limits, approvals, builds, releases,
-deployments, and audit records. Secret values are accepted only through standard input.
-`;
+import { documentationIndex, documentationTopic, quickstart, renderTopHelp, renderTopic, searchDocumentation, TOP_LEVEL_COMMANDS } from './guidance.js';
+import { VERSION, supportedNodeVersion } from './version.js';
 let quietOutput = false;
 let verboseOutput = false;
 function terminalText(value) {
@@ -112,9 +75,13 @@ function parseModule(value) {
     }
     return { name, language: language };
 }
-async function runProcess(command, args, cwd) {
+async function runProcess(command, args, cwd, json = false) {
     return new Promise((resolve, reject) => {
-        const child = spawn(command, args, { cwd, shell: false, stdio: 'inherit', env: { ...process.env, npm_config_ignore_scripts: 'true' } });
+        const child = spawn(command, args, { cwd, shell: false, stdio: json ? ['inherit', 'pipe', 'pipe'] : 'inherit', env: { ...process.env, npm_config_ignore_scripts: 'true' } });
+        if (json) {
+            child.stdout?.on('data', (chunk) => process.stderr.write(chunk));
+            child.stderr?.on('data', (chunk) => process.stderr.write(chunk));
+        }
         child.once('error', () => reject(new CliError(`The ${command} executable is not available.`, EXIT.filesystem, 'package_manager_unavailable')));
         child.once('exit', (code) => resolve(code ?? 1));
     });
@@ -141,7 +108,7 @@ async function commandCreate(args, json) {
     const install = !noInstall;
     assertNoUnknown(args);
     if (!SUPPORTED_FRONTENDS.includes(framework))
-        throw new CliError(`Unsupported template: ${framework}.`, EXIT.usage, 'invalid_template');
+        throw new CliError(`Unsupported template: ${framework}. Choose ${SUPPORTED_FRONTENDS.join(', ')}.`, EXIT.usage, 'invalid_template');
     if (!SUPPORTED_MANAGERS.includes(packageManager))
         throw new CliError(`Unsupported package manager: ${packageManager}.`, EXIT.usage, 'invalid_package_manager');
     if (database && !/^[A-Z][A-Z0-9_]{0,127}$/.test(database))
@@ -159,20 +126,45 @@ async function commandCreate(args, json) {
             yarn: ['install', '--mode=skip-build'],
             bun: ['install', '--ignore-scripts', '--no-progress'],
         };
-        const code = await runProcess(packageManager, installArgs[packageManager], target);
+        const code = await runProcess(packageManager, installArgs[packageManager], target, json);
         if (code !== 0)
             throw new CliError(`Dependency installation exited with code ${code}. The project files were kept.`, EXIT.filesystem, 'install_failed');
     }
-    emit({ ok: true, command: 'create', message: `Created ${name} at ${target}.`, data: { path: target, framework, modules: modules.length, installed: install && framework !== 'html' } }, json);
+    const nextSteps = !install && framework !== 'html' ? [`cd ${name}`, `${packageManager} install`, 'blinkhost test .', 'blinkhost dev .'] : [`cd ${name}`, 'blinkhost test .', ...(framework === 'html' ? [] : ['blinkhost dev .'])];
+    emit({ ok: true, command: 'create', message: `Created ${name} at ${target}.`, data: { path: target, framework, package_manager: packageManager, modules: modules.length, generated_files: [...scaffold.files.keys(), 'blinkhost.yaml'].sort(), installed: install && framework !== 'html', next_steps: nextSteps } }, json);
+}
+function commandSuggestion(command) {
+    const distance = (left, right) => {
+        const row = Array.from({ length: right.length + 1 }, (_, index) => index);
+        for (let i = 1; i <= left.length; i += 1) {
+            let previous = row[0];
+            row[0] = i;
+            for (let j = 1; j <= right.length; j += 1) {
+                const before = row[j];
+                row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (left[i - 1] === right[j - 1] ? 0 : 1));
+                previous = before;
+            }
+        }
+        return row[right.length];
+    };
+    const ranked = TOP_LEVEL_COMMANDS.map((candidate) => ({ candidate, distance: distance(command, candidate) })).sort((a, b) => a.distance - b.distance);
+    return ranked[0] && ranked[0].distance <= Math.max(2, Math.floor(command.length / 3)) ? ranked[0].candidate : null;
 }
 async function commandInit(args, json) {
     const force = takeFlag(args, '--force');
+    const dryRun = takeFlag(args, '--dry-run');
     const path = args.shift();
     assertNoUnknown(args);
+    if (force && dryRun)
+        throw new CliError('Choose either --force or --dry-run.', EXIT.usage, 'conflicting_options');
     const root = resolveLocalPath(path);
     const manifest = await detectManifest(root);
+    if (dryRun) {
+        emit({ ok: true, command: 'init', message: 'Detected a BlinkHost manifest without writing any files.', data: { path: root, framework: manifest.frontend.framework, written: false, manifest } }, json);
+        return;
+    }
     await writeManifest(root, manifest, force);
-    emit({ ok: true, command: 'init', message: `Created blinkhost.yaml in ${root}.`, data: { path: root, framework: manifest.frontend.framework } }, json);
+    emit({ ok: true, command: 'init', message: `Created blinkhost.yaml in ${root}.`, data: { path: root, framework: manifest.frontend.framework, written: true, changed_files: ['blinkhost.yaml'] } }, json);
 }
 async function commandValidate(args, json) {
     const path = args.shift();
@@ -235,18 +227,78 @@ export async function main(argv = process.argv.slice(2)) {
     const profile = takeOption(args, '--profile');
     const command = args.shift();
     try {
-        if (!command || command === '--help' || command === 'help') {
-            process.stdout.write(HELP);
+        const helpRequested = takeFlag(args, '--help');
+        if (!command || command === '--help') {
+            if (json)
+                emit({ ok: true, command: 'help', message: 'BlinkHost CLI command index.', data: documentationIndex() }, true);
+            else
+                process.stdout.write(renderTopHelp());
             return EXIT.success;
         }
         if (command === '--version' || command === 'version') {
-            process.stdout.write(`${VERSION}\n`);
+            if (json)
+                emit({ ok: true, command: 'version', message: `BlinkHost CLI ${VERSION}.`, data: { version: VERSION } }, true);
+            else
+                process.stdout.write(`${VERSION}\n`);
             return EXIT.success;
         }
-        if (takeFlag(args, '--help')) {
-            process.stdout.write(HELP);
+        if (command === 'help' || helpRequested) {
+            const requested = command === 'help' ? args.shift() : command;
+            assertNoUnknown(args);
+            if (!requested) {
+                if (json)
+                    emit({ ok: true, command: 'help', message: 'BlinkHost CLI command index.', data: documentationIndex() }, true);
+                else
+                    process.stdout.write(renderTopHelp());
+            }
+            else {
+                const topic = documentationTopic(requested);
+                if (!topic)
+                    throw new CliError(`No help is available for ${requested}. Run \`blinkhost docs\` to list topics.`, EXIT.usage, 'unknown_help_topic');
+                if (json)
+                    emit({ ok: true, command: `help ${requested}`, message: `${topic.title}.`, data: { schema: 'blinkhost/cli-docs/v1', cli_version: VERSION, topic } }, true);
+                else
+                    process.stdout.write(renderTopic(topic));
+            }
             return EXIT.success;
         }
+        if (command === 'docs') {
+            const search = takeOption(args, '--search');
+            const topicName = args.shift();
+            assertNoUnknown(args);
+            if (search && topicName)
+                throw new CliError('Choose a documentation topic or --search, not both.', EXIT.usage, 'conflicting_options');
+            if (search) {
+                const results = searchDocumentation(search);
+                if (json)
+                    emit({ ok: true, command: 'docs search', message: `${results.length} documentation topic(s) matched.`, data: { schema: 'blinkhost/cli-docs/v1', cli_version: VERSION, query: search, results } }, true);
+                else
+                    process.stdout.write(results.length ? results.map(renderTopic).join('\n') : `No offline documentation matched “${terminalText(search)}”.\n`);
+            }
+            else if (topicName) {
+                const topic = documentationTopic(topicName);
+                if (!topic)
+                    throw new CliError(`Unknown documentation topic: ${topicName}. Run \`blinkhost docs\` to list topics.`, EXIT.usage, 'unknown_docs_topic');
+                if (json)
+                    emit({ ok: true, command: `docs ${topicName}`, message: `${topic.title}.`, data: { schema: 'blinkhost/cli-docs/v1', cli_version: VERSION, topic } }, true);
+                else
+                    process.stdout.write(renderTopic(topic));
+            }
+            else if (json)
+                emit({ ok: true, command: 'docs', message: 'Offline documentation index.', data: documentationIndex() }, true);
+            else
+                process.stdout.write(renderTopHelp());
+            return EXIT.success;
+        }
+        if (command === 'quickstart') {
+            const path = args.shift();
+            assertNoUnknown(args);
+            const data = await quickstart(path);
+            emit({ ok: true, command, message: 'Local BlinkHost readiness check completed. No remote changes were made.', data }, json);
+            return EXIT.success;
+        }
+        if (!supportedNodeVersion())
+            throw new CliError(`Node.js ${process.versions.node} is unsupported. Install Node.js 22.12 or newer. Help, docs and quickstart remain available.`, EXIT.filesystem, 'unsupported_node');
         if (profile)
             validateProfileName(profile);
         if (command === 'create')
@@ -260,7 +312,7 @@ export async function main(argv = process.argv.slice(2)) {
         else if (command === 'doctor')
             await commandDoctor(args, json);
         else if (command === 'test') {
-            const data = await testProject(args);
+            const data = await testProject(args, json);
             emit({ ok: true, command, message: 'Project checks passed.', data }, json);
         }
         else if (command === 'auth') {
@@ -360,8 +412,8 @@ export async function main(argv = process.argv.slice(2)) {
         }
         else if (command === 'previews' && args[0] === 'open') {
             args.shift();
-            const data = await openPreview(args, profile);
-            emit({ ok: true, command: 'previews open', message: 'Opened the preview in your browser.', data }, json);
+            const data = await openPreview(args, profile, !nonInteractive);
+            emit({ ok: true, command: 'previews open', message: nonInteractive ? 'Preview URL loaded without opening a browser.' : 'Opened the preview in your browser.', data }, json);
         }
         else if ((command === 'builds' || command === 'deployments' || command === 'previews') && args[0] === 'wait') {
             args.shift();
@@ -382,7 +434,7 @@ export async function main(argv = process.argv.slice(2)) {
             emit({ ok: true, command, message: 'Secret operation completed.', data }, json);
         }
         else if (command === 'dev') {
-            const data = await runDev(args);
+            const data = await runDev(args, json);
             emit({ ok: true, command, message: 'Local development process finished.', data }, json);
         }
         else if (command === 'logs' || command === 'metrics' || command === 'analytics') {
@@ -412,21 +464,23 @@ export async function main(argv = process.argv.slice(2)) {
             emit({ ok: true, command: 'ci check', message: 'CI identity and API capabilities are ready.', data }, json);
         }
         else if (command === 'plugins') {
-            const data = await runPlugins(args);
+            const data = await runPlugins(args, json);
             emit({ ok: true, command, message: 'Plugin operation completed.', data }, json);
         }
         else if (command === 'api') {
             const data = await rawApi(args, profile);
             emit({ ok: true, command, message: 'API request completed.', data }, json);
         }
-        else
-            throw new CliError(`Unknown command: ${command}.`, EXIT.usage, 'unknown_command');
+        else {
+            const suggestion = commandSuggestion(command);
+            throw new CliError(`Unknown command: ${command}.${suggestion ? ` Did you mean \`${suggestion}\`?` : ' Run `blinkhost docs` to list commands.'}`, EXIT.usage, 'unknown_command');
+        }
         return EXIT.success;
     }
     catch (error) {
         const failure = error instanceof CliError ? error : new CliError(error instanceof Error ? error.message : String(error), EXIT.internal, 'internal_error');
         if (json)
-            process.stderr.write(`${JSON.stringify({ ok: false, command: command ?? '', error: { code: failure.code, message: failure.message, details: failure.details } })}\n`);
+            process.stdout.write(`${JSON.stringify({ ok: false, command: command ?? '', error: { code: failure.code, message: failure.message, details: failure.details } })}\n`);
         else {
             process.stderr.write(`Error: ${terminalText(failure.message)}\n`);
             for (const detail of failure.details)

@@ -14,6 +14,6 @@ export declare function syncProject(kind: 'pull' | 'push', input: string[], prof
 export declare function runSecrets(input: string[], profile?: string): Promise<unknown>;
 export declare function rawApi(input: string[], profile?: string): Promise<unknown>;
 export declare function waitForRemote(group: 'builds' | 'deployments' | 'previews', input: string[], profile?: string): Promise<unknown>;
-export declare function openPreview(input: string[], profile?: string): Promise<unknown>;
+export declare function openPreview(input: string[], profile?: string, launchBrowser?: boolean): Promise<unknown>;
 export declare function uploadAsset(input: string[], profile?: string): Promise<unknown>;
 export {};

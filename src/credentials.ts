@@ -3,6 +3,34 @@ import { CliError, EXIT } from './errors.js';
 
 const SERVICE = 'blinkhost-cli';
 
+export interface CredentialStoreStatus {
+  available: boolean;
+  provider: 'macos-keychain' | 'windows-password-vault' | 'linux-secret-service';
+  remediation: string | null;
+}
+
+async function executableAvailable(command: string, args: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { shell: false, stdio: 'ignore', windowsHide: true });
+    child.once('error', () => resolve(false));
+    child.once('exit', (code) => resolve(code === 0));
+  });
+}
+
+/** Checks only whether the platform credential service can be invoked. */
+export async function credentialStoreStatus(): Promise<CredentialStoreStatus> {
+  if (process.platform === 'darwin') {
+    const available = await executableAvailable('security', ['help']);
+    return { available, provider: 'macos-keychain', remediation: available ? null : 'Restore the macOS security command before interactive sign-in.' };
+  }
+  if (process.platform === 'win32') {
+    const available = await executableAvailable('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]']);
+    return { available, provider: 'windows-password-vault', remediation: available ? null : 'Use Windows with PowerShell and Password Vault available.' };
+  }
+  const available = await executableAvailable('secret-tool', ['--version']);
+  return { available, provider: 'linux-secret-service', remediation: available ? null : 'Install libsecret tools and start an unlocked Secret Service session, or use a short-lived workload identity in headless automation.' };
+}
+
 async function run(command: string, args: string[], input?: string, acceptMissing = false): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { shell: false, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });

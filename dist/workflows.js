@@ -8,6 +8,8 @@ import { readConfig, writeConfig } from './config.js';
 import { CliError, EXIT } from './errors.js';
 import { readProjectManifest, resolveLocalPath, validateProject } from './project.js';
 import { readProjectLink } from './remote.js';
+import { TOP_LEVEL_COMMANDS } from './guidance.js';
+import { VERSION } from './version.js';
 function takeOption(args, name) {
     const index = args.indexOf(name);
     if (index < 0)
@@ -22,9 +24,13 @@ function takeFlag(args, name) { const i = args.indexOf(name); if (i < 0)
     return false; args.splice(i, 1); return true; }
 function noExtra(args) { if (args.length)
     throw new CliError(`Unexpected argument: ${args[0]}`, EXIT.usage, 'unexpected_argument'); }
-async function spawnInherited(command, args, cwd, env) {
+async function spawnInherited(command, args, cwd, env, json = false) {
     return new Promise((resolve, reject) => {
-        const child = spawn(command, args, { cwd, env: env || process.env, shell: false, stdio: 'inherit', windowsHide: true });
+        const child = spawn(command, args, { cwd, env: env || process.env, shell: false, stdio: json ? ['inherit', 'pipe', 'pipe'] : 'inherit', windowsHide: true });
+        if (json) {
+            child.stdout?.on('data', (chunk) => process.stderr.write(chunk));
+            child.stderr?.on('data', (chunk) => process.stderr.write(chunk));
+        }
         const forward = (signal) => child.kill(signal);
         process.once('SIGINT', forward);
         process.once('SIGTERM', forward);
@@ -32,7 +38,7 @@ async function spawnInherited(command, args, cwd, env) {
         child.once('exit', (code) => { process.off('SIGINT', forward); process.off('SIGTERM', forward); resolve(code ?? 1); });
     });
 }
-export async function runDev(input) {
+export async function runDev(input, json = false) {
     const args = [...input];
     const root = resolveLocalPath(args.shift());
     const host = takeOption(args, '--host');
@@ -51,12 +57,12 @@ export async function runDev(input) {
     if (port)
         managerArgs.push('--port', port);
     const dependencyRoot = manifest.frontend.dependency_root === '.' ? root : join(root, manifest.frontend.dependency_root);
-    const exitCode = await spawnInherited(manager, managerArgs, dependencyRoot, { ...process.env, BLINKHOST_LOCAL: '1' });
+    const exitCode = await spawnInherited(manager, managerArgs, dependencyRoot, { ...process.env, BLINKHOST_LOCAL: '1' }, json);
     if (exitCode !== 0)
-        throw new CliError(`The local development process exited with code ${exitCode}.`, EXIT.remote, 'dev_process_failed');
+        throw new CliError(`The local development process exited with code ${exitCode}.`, EXIT.remote, 'dev_process_failed', [`If dependencies are missing, run \`${manager} install\` in ${dependencyRoot}, then retry.`]);
     return { exit_code: exitCode };
 }
-export async function testProject(input) {
+export async function testProject(input, json = false) {
     const args = [...input];
     const root = resolveLocalPath(args.shift());
     noExtra(args);
@@ -69,9 +75,9 @@ export async function testProject(input) {
     const dependencyRoot = manifest.frontend.dependency_root === '.' ? root : join(root, manifest.frontend.dependency_root);
     const packageJson = JSON.parse(await readFile(join(dependencyRoot, 'package.json'), 'utf8'));
     const script = packageJson.scripts?.test ? 'test' : 'build';
-    const code = await spawnInherited(manifest.frontend.package_manager, ['run', script], dependencyRoot, { ...process.env, CI: '1' });
+    const code = await spawnInherited(manifest.frontend.package_manager, ['run', script], dependencyRoot, { ...process.env, CI: '1' }, json);
     if (code !== 0)
-        throw new CliError(`Project ${script} exited with code ${code}.`, EXIT.validation, 'project_test_failed');
+        throw new CliError(`Project ${script} exited with code ${code}.`, EXIT.validation, 'project_test_failed', [`If dependencies are missing, run \`${manifest.frontend.package_manager} install\` in ${dependencyRoot}, then retry.`]);
     return { validated: true, command: `${manifest.frontend.package_manager} run ${script}`, exit_code: code };
 }
 export async function observability(kind, input, profile) {
@@ -98,7 +104,7 @@ export async function observability(kind, input, profile) {
     return client.request(`/api/sites/${encodeURIComponent(project)}/observability/${kind}/${suffix}`);
 }
 async function sha256File(path) { return createHash('sha256').update(await readFile(path)).digest('hex'); }
-export async function runPlugins(input) {
+export async function runPlugins(input, json = false) {
     const args = [...input];
     const action = args.shift() || 'list';
     const config = await readConfig();
@@ -154,27 +160,29 @@ export async function runPlugins(input) {
         for (const key of allowed)
             if (process.env[key])
                 env[key] = process.env[key];
-        const code = await spawnInherited(plugin.executable, passthrough, process.cwd(), env);
+        const code = await spawnInherited(plugin.executable, passthrough, process.cwd(), env, json);
         if (code !== 0)
             throw new CliError(`Plugin ${name} exited with code ${code}.`, EXIT.remote, 'plugin_failed');
         return { name, exit_code: code };
     }
     throw new CliError(`Unknown plugins action: ${action}.`, EXIT.usage, 'unknown_action');
 }
+const commandWords = TOP_LEVEL_COMMANDS.join(' ');
+const powershellCommands = TOP_LEVEL_COMMANDS.map((command) => `'${command}'`).join(',');
 const COMPLETIONS = {
-    bash: `complete -W "auth projects repositories connections dev previews builds deployments modules databases bindings assets secrets organizations templates approvals handoffs policies logs metrics analytics doctor support completion update ci plugins api" blinkhost`,
-    zsh: `#compdef blinkhost\n_arguments '1:command:(auth projects repositories connections dev previews builds deployments modules databases bindings assets secrets organizations templates approvals handoffs policies logs metrics analytics doctor support completion update ci plugins api)'`,
-    fish: `complete -c blinkhost -f -a "auth projects repositories connections dev previews builds deployments modules databases bindings assets secrets organizations templates approvals handoffs policies logs metrics analytics doctor support completion update ci plugins api"`,
-    powershell: `Register-ArgumentCompleter -Native -CommandName blinkhost -ScriptBlock { param($wordToComplete) 'auth','projects','repositories','connections','dev','previews','builds','deployments','modules','databases','bindings','assets','secrets','organizations','templates','approvals','handoffs','policies','logs','metrics','analytics','doctor','support','completion','update','ci','plugins','api' | Where-Object { $_ -like "$wordToComplete*" } }`,
+    bash: `complete -W "${commandWords}" blinkhost`,
+    zsh: `#compdef blinkhost\n_arguments '1:command:(${commandWords})'`,
+    fish: `complete -c blinkhost -f -a "${commandWords}"`,
+    powershell: `Register-ArgumentCompleter -Native -CommandName blinkhost -ScriptBlock { param($wordToComplete) ${powershellCommands} | Where-Object { $_ -like "$wordToComplete*" } }`,
 };
 export function completion(shell) { if (!shell || !COMPLETIONS[shell])
     throw new CliError('Choose bash, zsh, fish, or powershell.', EXIT.usage, 'invalid_shell'); return `${COMPLETIONS[shell]}\n`; }
 export async function checkForUpdate() {
-    const response = await fetch('https://api.github.com/repos/blinkhost-ltd/blinkhost-cli/releases/latest', { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'BlinkHost-CLI/2.0.0' }, redirect: 'error' });
+    const response = await fetch('https://api.github.com/repos/blinkhost-ltd/blinkhost-cli/releases/latest', { headers: { Accept: 'application/vnd.github+json', 'User-Agent': `BlinkHost-CLI/${VERSION}` }, redirect: 'error' });
     if (!response.ok)
         throw new CliError('The release service could not be reached.', EXIT.network, 'update_check_failed');
     const data = await response.json();
-    return { current_version: '2.0.0', latest_version: data.tag_name?.replace(/^v/, '') || null, release_url: data.html_url || null, automatic_install: false };
+    return { current_version: VERSION, latest_version: data.tag_name?.replace(/^v/, '') || null, release_url: data.html_url || null, automatic_install: false };
 }
 export async function ciCheck(profile) {
     const client = await ApiClient.create(profile);
@@ -201,7 +209,7 @@ export async function supportBundle(input, profile) {
     catch (error) {
         api = { reachable: false, error_code: error instanceof CliError ? error.code : 'unknown' };
     }
-    const payload = { schema: 'blinkhost/support-bundle/v1', created_at: new Date().toISOString(), cli_version: '2.0.0', system: { platform: platform(), release: release(), node: process.versions.node, device_hash: createHash('sha256').update(hostname()).digest('hex').slice(0, 16) }, project, api };
+    const payload = { schema: 'blinkhost/support-bundle/v1', created_at: new Date().toISOString(), cli_version: VERSION, system: { platform: platform(), release: release(), node: process.versions.node, device_hash: createHash('sha256').update(hostname()).digest('hex').slice(0, 16) }, project, api };
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
     return { output, redacted: true };
