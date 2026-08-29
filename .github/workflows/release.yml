@@ -1,0 +1,61 @@
+name: CLI Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62
+        with:
+          cosign-release: v2.4.3
+      - name: Verify release identity
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          test "${RELEASE_TAG}" = "v${package_version}"
+      - name: Install and test exact source
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm audit --omit=dev --audit-level=moderate
+      - name: Build package, SBOM and checksums
+        id: package
+        run: |
+          artifact="$(npm pack --ignore-scripts --json | jq -r '.[0].filename')"
+          test -n "${artifact}"
+          npm sbom --omit=dev --sbom-format cyclonedx > "${artifact%.tgz}.sbom.cdx.json"
+          sha256sum "${artifact}" "${artifact%.tgz}.sbom.cdx.json" > SHA256SUMS
+          echo "artifact=${artifact}" >> "$GITHUB_OUTPUT"
+          echo "sbom=${artifact%.tgz}.sbom.cdx.json" >> "$GITHUB_OUTPUT"
+      - name: Sign release evidence with Sigstore
+        run: |
+          cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+      - name: Publish immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.package.outputs.artifact }}
+          SBOM: ${{ steps.package.outputs.sbom }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "${ARTIFACT}" "${SBOM}" SHA256SUMS SHA256SUMS.sigstore.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes \
+            --title "BlinkHost CLI ${GITHUB_REF_NAME}"
