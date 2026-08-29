@@ -4,6 +4,10 @@ export declare const EXIT: {
     readonly validation: 3;
     readonly filesystem: 4;
     readonly internal: 5;
+    readonly auth: 6;
+    readonly network: 7;
+    readonly remote: 8;
+    readonly conflict: 9;
 };
 export declare class CliError extends Error {
     readonly exitCode: number;

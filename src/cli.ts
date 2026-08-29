@@ -16,8 +16,13 @@ import {
 import { detectManifest } from './detect.js';
 import { readProjectManifest, resolveLocalPath, validateProject, writeManifest, writeScaffoldAtomically } from './project.js';
 import { createScaffold, type ScaffoldModule } from './templates.js';
+import { ApiClient } from './api.js';
+import { login, logout } from './auth.js';
+import { activeProfile, readConfig, validateProfileName, writeConfig } from './config.js';
+import { openPreview, projectStatus, rawApi, readProjectLink, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
+import { checkForUpdate, ciCheck, completion, observability, runDev, runPlugins, supportBundle, testProject } from './workflows.js';
 
-const VERSION = '1.0.0';
+const VERSION = '2.0.0';
 const HELP = `BlinkHost CLI ${VERSION}
 
 Usage:
@@ -27,18 +32,39 @@ Usage:
   blinkhost validate [path]
   blinkhost manifest [path]
   blinkhost doctor [path]
+  blinkhost test [path]
+  blinkhost auth login|logout|status|sessions|revoke
+  blinkhost projects list|get|create|update|delete|action|link|current
+  blinkhost repositories|connections|previews|builds|deployments <action>
+  blinkhost modules|databases|bindings|assets|secrets <action>
+  blinkhost organizations|templates|approvals|handoffs|policies|workloads <action>
+  blinkhost dev [path] [--host HOST] [--port PORT]
+  blinkhost logs|metrics|analytics --project PROJECT_ID
+  blinkhost support bundle [--output PATH]
+  blinkhost completion bash|zsh|fish
+  blinkhost update check
+  blinkhost ci check
+  blinkhost plugins list|add|remove|verify|run
+  blinkhost api METHOD /api/customer/path/ [--data JSON_OR_@FILE]
 
 Global options:
   --json       Return machine-readable output
+  --profile    Use a named account and API profile
+  --quiet      Suppress successful human-readable output
+  --verbose    Include safe diagnostic detail in errors
+  --no-color   Disable terminal colour (accepted for portable scripts)
+  --non-interactive  Never open a browser or prompt
   --help       Show command help
   --version    Show the CLI version
 
-The CLI never stores credentials, follows symbolic links, overwrites a project during
-create, or runs dependency lifecycle scripts. Deployment remains available through
-the BlinkHost dashboard until a dedicated short-lived CLI authorization flow ships.
+Refresh credentials are stored only by the operating-system credential service.
+BlinkHost remains authoritative for roles, plan limits, approvals, builds, releases,
+deployments, and audit records. Secret values are accepted only through standard input.
 `;
 
 interface Output { ok: boolean; command: string; message: string; data?: unknown; warnings?: string[] }
+let quietOutput = false;
+let verboseOutput = false;
 
 function terminalText(value: string): string {
   return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '');
@@ -47,7 +73,11 @@ function terminalText(value: string): string {
 function emit(output: Output, json: boolean): void {
   if (json) process.stdout.write(`${JSON.stringify(output)}\n`);
   else {
+    if (quietOutput) return;
     process.stdout.write(`${terminalText(output.message)}\n`);
+    if (output.data !== undefined && output.data !== null) {
+      process.stdout.write(`${terminalText(JSON.stringify(output.data, null, 2))}\n`);
+    }
     for (const warning of output.warnings ?? []) process.stderr.write(`Warning: ${terminalText(warning)}\n`);
   }
 }
@@ -195,16 +225,73 @@ async function commandDoctor(args: string[], json: boolean): Promise<void> {
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const args = [...argv];
   const json = takeFlag(args, '--json');
+  quietOutput = takeFlag(args, '--quiet');
+  verboseOutput = takeFlag(args, '--verbose');
+  takeFlag(args, '--no-color');
+  const nonInteractive = takeFlag(args, '--non-interactive');
+  const profile = takeOption(args, '--profile');
   const command = args.shift();
   try {
     if (!command || command === '--help' || command === 'help') { process.stdout.write(HELP); return EXIT.success; }
     if (command === '--version' || command === 'version') { process.stdout.write(`${VERSION}\n`); return EXIT.success; }
     if (takeFlag(args, '--help')) { process.stdout.write(HELP); return EXIT.success; }
+    if (profile) validateProfileName(profile);
     if (command === 'create') await commandCreate(args, json);
     else if (command === 'init') await commandInit(args, json);
     else if (command === 'validate') await commandValidate(args, json);
     else if (command === 'manifest') await commandManifest(args, json);
     else if (command === 'doctor') await commandDoctor(args, json);
+    else if (command === 'test') { const data = await testProject(args); emit({ ok: true, command, message: 'Project checks passed.', data }, json); }
+    else if (command === 'auth') {
+      const action = args.shift() || 'status';
+      if (action === 'login') {
+        const apiOrigin = takeOption(args, '--api-origin');
+        const noBrowser = takeFlag(args, '--no-browser');
+        assertNoUnknown(args);
+        if (nonInteractive) throw new CliError('Interactive account authorization is disabled. Use an approved workload identity in automation.', EXIT.auth, 'interaction_required');
+        const data = await login({ ...(profile ? { profile } : {}), ...(apiOrigin ? { apiOrigin } : {}), openBrowser: !noBrowser, ...(!json && !quietOutput ? { progress: (line: string) => { process.stderr.write(`${terminalText(line)}\n`); } } : {}) });
+        emit({ ok: true, command: 'auth login', message: 'This device is connected to BlinkHost.', data }, json);
+      } else if (action === 'logout') {
+        assertNoUnknown(args); const data = await logout(profile); emit({ ok: true, command: 'auth logout', message: `Signed out CLI profile ${data.profile}.`, data }, json);
+      } else if (action === 'status') {
+        assertNoUnknown(args); const client = await ApiClient.create(profile); const data = await client.request('/api/cli/v2/capabilities/'); emit({ ok: true, command: 'auth status', message: 'The CLI session is active.', data }, json);
+      } else if (action === 'sessions') {
+        assertNoUnknown(args); const client = await ApiClient.create(profile); const data = await client.request('/api/cli/v2/sessions/'); emit({ ok: true, command: 'auth sessions', message: 'CLI sessions loaded.', data }, json);
+      } else if (action === 'revoke') {
+        const id = args.shift(); assertNoUnknown(args); if (!id || !/^[0-9a-f-]{36}$/i.test(id)) throw new CliError('Provide a valid CLI session ID.', EXIT.usage, 'invalid_session_id');
+        const client = await ApiClient.create(profile); await client.request(`/api/cli/v2/sessions/${id}/`, { method: 'DELETE' }); emit({ ok: true, command: 'auth revoke', message: 'CLI session revoked.', data: { id } }, json);
+      } else throw new CliError(`Unknown auth action: ${action}.`, EXIT.usage, 'unknown_action');
+    }
+    else if (command === 'profile') {
+      const action = args.shift() || 'list'; const config = await readConfig();
+      if (action === 'list') { assertNoUnknown(args); emit({ ok: true, command: 'profile list', message: `Active profile: ${config.activeProfile}.`, data: { active: config.activeProfile, profiles: config.profiles } }, json); }
+      else if (action === 'use') { const name = validateProfileName(args.shift() || ''); assertNoUnknown(args); if (!config.profiles[name]) throw new CliError('Profile not found. Sign in with that profile first.', EXIT.usage, 'profile_not_found'); config.activeProfile = name; await writeConfig(config); emit({ ok: true, command: 'profile use', message: `Using profile ${name}.`, data: { active: name } }, json); }
+      else throw new CliError(`Unknown profile action: ${action}.`, EXIT.usage, 'unknown_action');
+    }
+    else if (command === 'projects' && args[0] === 'link') {
+      args.shift(); const projectId = args.shift(); const root = args.shift(); assertNoUnknown(args); if (!projectId) throw new CliError('Provide a project ID.', EXIT.usage, 'project_required'); const selected = await activeProfile(profile); const data = await writeProjectLink(projectId, selected.name, root); emit({ ok: true, command: 'projects link', message: 'This directory is linked to the BlinkHost project.', data }, json);
+    }
+    else if (command === 'projects' && args[0] === 'current') {
+      args.shift(); const root = args.shift(); assertNoUnknown(args); const data = await readProjectLink(root); emit({ ok: true, command: 'projects current', message: `Linked project: ${data.project_id}.`, data }, json);
+    }
+    else if (command === 'projects' && args[0] === 'unlink') { args.shift(); const root = args.shift(); assertNoUnknown(args); const data = await unlinkProject(root); emit({ ok: true, command: 'projects unlink', message: 'Removed the local BlinkHost project link. The remote project was not changed.', data }, json); }
+    else if (command === 'projects' && args[0] === 'status') { args.shift(); assertNoUnknown(args); const data = await projectStatus(profile); emit({ ok: true, command: 'projects status', message: 'Project and source connection status loaded.', data }, json); }
+    else if (command === 'projects' && (args[0] === 'pull' || args[0] === 'push')) { const action = args.shift() as 'pull' | 'push'; const data = await syncProject(action, args, profile); emit({ ok: true, command: `projects ${action}`, message: `${action === 'pull' ? 'Pulled repository changes into BlinkHost.' : 'Pushed BlinkHost changes to the connected repository.'}`, data }, json); }
+    else if (command === 'previews' && args[0] === 'open') { args.shift(); const data = await openPreview(args, profile); emit({ ok: true, command: 'previews open', message: 'Opened the preview in your browser.', data }, json); }
+    else if ((command === 'builds' || command === 'deployments' || command === 'previews') && args[0] === 'wait') { args.shift(); const data = await waitForRemote(command, args, profile); emit({ ok: true, command: `${command} wait`, message: `${command.slice(0, -1)} is ready.`, data }, json); }
+    else if (command === 'assets' && args[0] === 'upload') { args.shift(); const data = await uploadAsset(args, profile); emit({ ok: true, command: 'assets upload', message: 'Asset uploaded and verified.', data }, json); }
+    else if (['projects', 'repositories', 'connections', 'previews', 'builds', 'deployments', 'modules', 'databases', 'bindings', 'assets', 'organizations', 'templates', 'approvals', 'handoffs', 'policies', 'workloads'].includes(command)) {
+      const data = await runRemote(command, args, profile); emit({ ok: true, command, message: `${command[0]?.toUpperCase()}${command.slice(1)} request completed.`, data }, json);
+    }
+    else if (command === 'secrets') { const data = await runSecrets(args, profile); emit({ ok: true, command, message: 'Secret operation completed.', data }, json); }
+    else if (command === 'dev') { const data = await runDev(args); emit({ ok: true, command, message: 'Local development process finished.', data }, json); }
+    else if (command === 'logs' || command === 'metrics' || command === 'analytics') { const data = await observability(command, args, profile); emit({ ok: true, command, message: `${command} loaded.`, data }, json); }
+    else if (command === 'support' && args.shift() === 'bundle') { const data = await supportBundle(args, profile); emit({ ok: true, command: 'support bundle', message: `Created redacted support bundle at ${(data as { output: string }).output}.`, data }, json); }
+    else if (command === 'completion') { const output = completion(args.shift()); assertNoUnknown(args); if (json) emit({ ok: true, command, message: 'Shell completion generated.', data: { script: output } }, true); else process.stdout.write(output); }
+    else if (command === 'update' && args.shift() === 'check') { assertNoUnknown(args); const data = await checkForUpdate(); emit({ ok: true, command: 'update check', message: 'Release check completed.', data }, json); }
+    else if (command === 'ci' && args.shift() === 'check') { assertNoUnknown(args); const data = await ciCheck(profile); emit({ ok: true, command: 'ci check', message: 'CI identity and API capabilities are ready.', data }, json); }
+    else if (command === 'plugins') { const data = await runPlugins(args); emit({ ok: true, command, message: 'Plugin operation completed.', data }, json); }
+    else if (command === 'api') { const data = await rawApi(args, profile); emit({ ok: true, command, message: 'API request completed.', data }, json); }
     else throw new CliError(`Unknown command: ${command}.`, EXIT.usage, 'unknown_command');
     return EXIT.success;
   } catch (error) {
@@ -213,6 +300,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     else {
       process.stderr.write(`Error: ${terminalText(failure.message)}\n`);
       for (const detail of failure.details) process.stderr.write(`  - ${terminalText(detail)}\n`);
+      if (verboseOutput) process.stderr.write(`Code: ${failure.code}; exit: ${failure.exitCode}\n`);
     }
     return failure.exitCode;
   }

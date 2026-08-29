@@ -1,7 +1,7 @@
 {
   "name": "@blinkhost/cli",
-  "version": "1.0.0",
-  "description": "Secure project scaffolding and validation for BlinkHost",
+  "version": "2.0.0",
+  "description": "Secure local and remote developer workflows for BlinkHost",
   "type": "module",
   "bin": { "blinkhost": "dist/cli.js" },
   "files": ["dist/*.js", "dist/*.d.ts", "README.md", "LICENSE"],
