@@ -11,7 +11,18 @@ npm install --global @blinkhost/cli
 blinkhost --version
 ```
 
-Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verification bundle remain available at <https://github.com/blinkhost-ltd/blinkhost-cli/releases/tag/v2.0.0>.
+Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verification bundle are available at <https://github.com/blinkhost-ltd/blinkhost-cli/releases>.
+
+## Start safely
+
+```bash
+blinkhost quickstart
+blinkhost docs
+blinkhost docs automation
+blinkhost help create
+```
+
+`quickstart` is local, read-only, and makes no network requests. It checks Node.js, Git, the operating-system credential service, the selected directory, and any existing BlinkHost manifest. It never signs in, uploads source, creates a cloud resource, or incurs usage. The bundled `docs` reference is offline and matches the installed CLI version; use the linked web documentation for longer guides.
 
 ## Connect an account
 
@@ -30,6 +41,8 @@ blinkhost profile use work
 
 Revoke a device with `blinkhost auth revoke SESSION_ID` or disconnect all CLI sessions for the active profile with `blinkhost auth logout`.
 
+Interactive credential storage uses macOS Keychain, Windows Password Vault, or Linux Secret Service (`secret-tool` with an available, unlocked session keyring). The CLI intentionally does not fall back to a plaintext refresh-token file. Headless systems should use a registered GitHub OIDC workload or a short-lived runtime access token.
+
 ## Create or adopt a project
 
 ```bash
@@ -40,9 +53,24 @@ blinkhost projects link PROJECT_ID
 blinkhost dev
 ```
 
-Supported frontends are Astro, HTML, React, Solid, Svelte, and Vue. Backend modules may use Go, Python, or Rust. `blinkhost init` detects supported metadata in an existing repository and creates `blinkhost.yaml` for review.
+Supported frontends are Astro, HTML, React, Solid, Svelte, and Vue. Backend modules may use Go, Python, or Rust. `blinkhost init` detects supported frontend metadata in an existing repository and creates `blinkhost.yaml` for review. Preview the exact result without writing anything first:
+
+```bash
+blinkhost init apps/storefront --dry-run --json
+```
+
+`init` writes only `blinkhost.yaml`, refuses an existing manifest unless `--force` is explicitly supplied, and never rewrites application source. It does not guess backend services; add existing Go, Python, or Rust modules explicitly to the reviewed manifest. One manifest describes one deployable application. In a monorepo, select the application directory, or place the manifest at a build-context root that contains the app and its shared workspace packages; use separate BlinkHost projects for independently deployable apps.
 
 Creation is atomic and refuses to replace an existing path. Dependency lifecycle scripts are disabled. Validation rejects unknown manifest fields, duplicate YAML keys, aliases, traversal, unsafe symbolic links, invalid cross-platform paths, duplicate module names, and missing declared inputs.
+
+When using `--no-install`, enter the generated directory, run the selected package manager's install command, then run `blinkhost test .`. For example:
+
+```bash
+blinkhost create study-circle --template astro --no-install
+cd study-circle
+npm install
+blinkhost test .
+```
 
 ## Remote workflows
 
@@ -99,7 +127,7 @@ Support bundles are local, redacted JSON files with mode `0600`. They exclude to
 
 ## CI and automation
 
-All commands support `--json`. Register one exact GitHub branch, tag, or protected environment as a workload identity, then grant the workflow `id-token: write`. The CLI exchanges GitHub's signed OIDC assertion for a ten-minute BlinkHost token automatically; no BlinkHost secret is stored in GitHub.
+All commands support `--json`. In JSON mode, stdout contains exactly one response object on success or failure; subprocess and human diagnostics use stderr. Register one exact GitHub branch, tag, or protected environment as a workload identity, then grant the workflow `id-token: write`. The CLI exchanges GitHub's signed OIDC assertion for a ten-minute BlinkHost token automatically; no BlinkHost secret is stored in GitHub.
 
 ```bash
 blinkhost workloads create --data @workload.json
@@ -126,6 +154,18 @@ blinkhost plugins run example -- arguments
 ```
 
 Update checks never install software. Plugins require explicit local approval, are pinned to their executable SHA-256 digest, stop when the executable changes, and receive neither BlinkHost credentials nor the parent environment. A plugin is still third-party code running with your operating-system account; review it before adding it.
+
+Pin or roll back explicitly with `npm install --global @blinkhost/cli@VERSION`. Tagged packages are published from the `blinkhost-ltd/blinkhost-cli` release workflow through npm Trusted Publishing with provenance. To verify a downloaded GitHub release, first run `sha256sum --check SHA256SUMS`, then verify its Sigstore bundle:
+
+```bash
+cosign verify-blob \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.1.0" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  SHA256SUMS
+```
+
+The supported runtime is Node.js 22.12 or newer on Linux, macOS, and Windows, including x64 and arm64 environments where that Node release is available. Bash, Zsh, Fish, and PowerShell completion are generated by the CLI. For an offline installation, verify the package archive, checksum file, and Sigstore bundle on a connected machine, transfer them through an approved channel, then run `npm install --global ./blinkhost-cli-VERSION.tgz --offline`.
 
 ## Exit codes
 

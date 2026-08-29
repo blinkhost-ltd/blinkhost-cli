@@ -5,8 +5,8 @@ import { activeProfile, validateApiOrigin, validateProfileName, writeConfig } fr
 import { deleteRefreshCredential, setRefreshCredential } from './credentials.js';
 import { ApiClient, publicRequest } from './api.js';
 import { CliError, EXIT } from './errors.js';
+import { VERSION } from './version.js';
 
-const VERSION = '2.0.0';
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function openBrowser(url: string): void {

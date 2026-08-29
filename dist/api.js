@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { activeProfile, writeConfig } from './config.js';
 import { deleteRefreshCredential, getRefreshCredential, setRefreshCredential } from './credentials.js';
 import { CliError, EXIT } from './errors.js';
+import { VERSION } from './version.js';
 const REQUEST_TIMEOUT_MS = 30_000;
 function messageFrom(payload, fallback) {
     if (payload && typeof payload === 'object') {
@@ -32,7 +33,7 @@ export async function publicRequest(apiOrigin, path, init = {}) {
             ...init,
             redirect: 'error',
             signal: controller.signal,
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'BlinkHost-CLI/2.0.0', ...Object.fromEntries(new Headers(init.headers).entries()) },
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': `BlinkHost-CLI/${VERSION}`, ...Object.fromEntries(new Headers(init.headers).entries()) },
         });
         return { response, data: await parseResponse(response) };
     }
@@ -105,13 +106,15 @@ export class ApiClient {
     async request(path, init = {}) {
         const headers = new Headers(init.headers);
         headers.set('Authorization', `Bearer ${this.accessToken}`);
-        headers.set('X-Request-ID', headers.get('X-Request-ID') || randomUUID());
+        const requestId = headers.get('X-Request-ID') || randomUUID();
+        headers.set('X-Request-ID', requestId);
         if (init.method && init.method !== 'GET' && !headers.has('Idempotency-Key'))
             headers.set('Idempotency-Key', randomUUID());
         const result = await publicRequest(this.profile.apiOrigin, path, { ...init, headers });
         if (!result.response.ok) {
             const exit = result.response.status === 401 || result.response.status === 403 ? EXIT.auth : result.response.status === 409 ? EXIT.conflict : EXIT.remote;
-            throw new CliError(messageFrom(result.data, `BlinkHost returned HTTP ${result.response.status}.`), exit, `api_${result.response.status}`);
+            const responseId = result.response.headers.get('x-request-id') || requestId;
+            throw new CliError(messageFrom(result.data, `BlinkHost returned HTTP ${result.response.status}.`), exit, `api_${result.response.status}`, [`Request ID: ${responseId}`]);
         }
         return result.data;
     }

@@ -253,7 +253,7 @@ export async function waitForRemote(group: 'builds' | 'deployments' | 'previews'
   throw new CliError(`Timed out waiting for ${group.slice(0, -1)} ${id}.`, EXIT.network, 'wait_timeout');
 }
 
-export async function openPreview(input: string[], profile?: string): Promise<unknown> {
+export async function openPreview(input: string[], profile?: string, launchBrowser = true): Promise<unknown> {
   const args = [...input]; const id = safeIdentifier(args.shift()); noExtra(args);
   const client = await ApiClient.create(profile); const data = await client.request(`${collectionPath('previews')}${id}/`) as Record<string, unknown>;
   const value = data.url || data.preview_url || data.public_url;
@@ -261,10 +261,12 @@ export async function openPreview(input: string[], profile?: string): Promise<un
   const url = new URL(value);
   const trusted = url.protocol === 'https:' && (url.hostname === 'preview.blinkhost.me' || url.hostname.endsWith('.preview.blinkhost.me') || url.hostname.endsWith('.blinkhost.website'));
   if (!trusted || url.username || url.password) throw new CliError('BlinkHost returned an untrusted preview URL.', EXIT.remote, 'preview_url_untrusted');
-  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd.exe' : 'xdg-open';
-  const commandArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'start', '', url.toString()] : [url.toString()];
-  const child = spawn(command, commandArgs, { detached: true, shell: false, stdio: 'ignore' }); child.on('error', () => {}); child.unref();
-  return { id: decodeURIComponent(id), url: url.toString() };
+  if (launchBrowser) {
+    const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd.exe' : 'xdg-open';
+    const commandArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'start', '', url.toString()] : [url.toString()];
+    const child = spawn(command, commandArgs, { detached: true, shell: false, stdio: 'ignore' }); child.on('error', () => {}); child.unref();
+  }
+  return { id: decodeURIComponent(id), url: url.toString(), browser_opened: launchBrowser };
 }
 
 const ASSET_MEDIA_TYPES: Record<string, string> = {

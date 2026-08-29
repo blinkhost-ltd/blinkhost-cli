@@ -49,16 +49,34 @@ jobs:
         run: |
           cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
       - name: Publish package to npm
-        run: npx --yes npm@11.6.0 publish --access public --provenance
+        env:
+          ARTIFACT: ${{ steps.package.outputs.artifact }}
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          if npm view "@blinkhost/cli@${package_version}" version >/dev/null 2>&1; then
+            mkdir -p /tmp/npm-release-check
+            remote_artifact="$(cd /tmp/npm-release-check && npm pack "@blinkhost/cli@${package_version}" --ignore-scripts --json | jq -r '.[0].filename')"
+            test "$(sha256sum "${ARTIFACT}" | cut -d' ' -f1)" = "$(sha256sum "/tmp/npm-release-check/${remote_artifact}" | cut -d' ' -f1)"
+            echo "The exact package is already published; safe workflow re-run detected."
+          else
+            npx --yes npm@11.6.0 publish "${ARTIFACT}" --access public --provenance
+          fi
       - name: Publish immutable GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.package.outputs.artifact }}
           SBOM: ${{ steps.package.outputs.sbom }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            "${ARTIFACT}" "${SBOM}" SHA256SUMS SHA256SUMS.sigstore.json \
-            --repo "${GITHUB_REPOSITORY}" \
-            --verify-tag \
-            --generate-notes \
-            --title "BlinkHost CLI ${GITHUB_REF_NAME}"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            expected="${ARTIFACT}\n${SBOM}\nSHA256SUMS\nSHA256SUMS.sigstore.json"
+            actual="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name' | sort)"
+            test "$(printf '%b' "${expected}" | sort)" = "${actual}"
+            echo "Release assets already exist; safe workflow re-run detected."
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              "${ARTIFACT}" "${SBOM}" SHA256SUMS SHA256SUMS.sigstore.json \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --generate-notes \
+              --title "BlinkHost CLI ${GITHUB_REF_NAME}"
+          fi

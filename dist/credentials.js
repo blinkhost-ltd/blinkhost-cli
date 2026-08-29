@@ -1,6 +1,26 @@
 import { spawn } from 'node:child_process';
 import { CliError, EXIT } from './errors.js';
 const SERVICE = 'blinkhost-cli';
+async function executableAvailable(command, args) {
+    return new Promise((resolve) => {
+        const child = spawn(command, args, { shell: false, stdio: 'ignore', windowsHide: true });
+        child.once('error', () => resolve(false));
+        child.once('exit', (code) => resolve(code === 0));
+    });
+}
+/** Checks only whether the platform credential service can be invoked. */
+export async function credentialStoreStatus() {
+    if (process.platform === 'darwin') {
+        const available = await executableAvailable('security', ['help']);
+        return { available, provider: 'macos-keychain', remediation: available ? null : 'Restore the macOS security command before interactive sign-in.' };
+    }
+    if (process.platform === 'win32') {
+        const available = await executableAvailable('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]']);
+        return { available, provider: 'windows-password-vault', remediation: available ? null : 'Use Windows with PowerShell and Password Vault available.' };
+    }
+    const available = await executableAvailable('secret-tool', ['--version']);
+    return { available, provider: 'linux-secret-service', remediation: available ? null : 'Install libsecret tools and start an unlocked Secret Service session, or use a short-lived workload identity in headless automation.' };
+}
 async function run(command, args, input, acceptMissing = false) {
     return new Promise((resolve, reject) => {
         const child = spawn(command, args, { shell: false, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
