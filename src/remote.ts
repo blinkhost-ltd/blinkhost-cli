@@ -1,5 +1,5 @@
 import { lstat, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { basename, extname } from 'node:path';
 import { join } from 'node:path';
 import { stdin } from 'node:process';
@@ -57,6 +57,11 @@ function noExtra(args: string[]): void {
 function safeIdentifier(value: string | undefined, label = 'ID'): string {
   if (!value || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) throw new CliError(`${label} is missing or invalid.`, EXIT.usage, 'invalid_identifier');
   return encodeURIComponent(value);
+}
+
+function validIdempotencyKey(value: string): string {
+  if (!value || Buffer.byteLength(value, 'utf8') > 256 || /[\u0000-\u001f\u007f-\u009f]/.test(value)) throw new CliError('Idempotency keys must be from 1 to 256 bytes and cannot contain control characters.', EXIT.usage, 'invalid_idempotency_key');
+  return value;
 }
 
 async function readPayload(value: string | undefined): Promise<Record<string, unknown>> {
@@ -122,6 +127,58 @@ export async function runRemote(group: string, input: string[], profile?: string
     return client.request(`${base}${id}/${operation}/`, { method: 'POST', body: JSON.stringify(data) });
   }
   throw new CliError(`Unknown ${group} action: ${action}.`, EXIT.usage, 'unknown_action');
+}
+
+export async function runFunctions(input: string[], profile?: string): Promise<unknown> {
+  const args = [...input];
+  const resource = args.shift();
+  const action = args.shift() || 'list';
+  const moduleId = safeIdentifier(args.shift(), 'Module ID');
+  const client = await ApiClient.create(profile);
+  if (resource === 'triggers') {
+    const base = `/api/backend-modules/${moduleId}/triggers/`;
+    if (action === 'list') { noExtra(args); return client.request(base); }
+    if (action === 'create') {
+      const data = await readPayload(takeOption(args, '--data')); noExtra(args);
+      return client.request(base, { method: 'POST', body: JSON.stringify(data) });
+    }
+    const triggerIdRaw = args.shift();
+    const triggerId = safeIdentifier(triggerIdRaw, 'Trigger ID');
+    if (action === 'update') {
+      const data = await readPayload(takeOption(args, '--data')); noExtra(args);
+      return client.request(`${base}${triggerId}/`, { method: 'PATCH', body: JSON.stringify(data) });
+    }
+    if (action === 'delete') {
+      const confirmed = takeOption(args, '--confirm'); noExtra(args);
+      if (confirmed !== triggerIdRaw) throw new CliError('Repeat the trigger ID with --confirm before deleting it.', EXIT.usage, 'confirmation_required');
+      return client.request(`${base}${triggerId}/`, { method: 'DELETE' });
+    }
+    throw new CliError(`Unknown trigger action: ${action}.`, EXIT.usage, 'unknown_action');
+  }
+  if (resource === 'invoke') {
+    if (action !== 'run') throw new CliError('Use `functions invoke run MODULE_ID TRIGGER_ID`.', EXIT.usage, 'invalid_function_command');
+    const triggerId = safeIdentifier(args.shift(), 'Trigger ID');
+    const payload = await readPayload(takeOption(args, '--data'));
+    if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > 262_144) throw new CliError('Function payloads cannot exceed 256 KiB.', EXIT.validation, 'function_payload_too_large');
+    const idempotencyKey = validIdempotencyKey(takeOption(args, '--idempotency-key') || randomUUID());
+    noExtra(args);
+    return client.request(`/api/backend-modules/${moduleId}/triggers/${triggerId}/invoke/`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ payload }) });
+  }
+  if (resource === 'invocations') {
+    const base = `/api/backend-modules/${moduleId}/invocations/`;
+    if (action === 'list') { noExtra(args); return client.request(base); }
+    const invocationId = safeIdentifier(args.shift(), 'Invocation ID');
+    if (action === 'get') { noExtra(args); return client.request(`${base}${invocationId}/`); }
+    if (action === 'result') { noExtra(args); return client.request(`${base}${invocationId}/result/`); }
+    if (action === 'cancel') { noExtra(args); return client.request(`${base}${invocationId}/cancel/`, { method: 'POST', body: '{}' }); }
+    if (action === 'retry') {
+      const idempotencyKey = validIdempotencyKey(takeOption(args, '--idempotency-key') || randomUUID());
+      noExtra(args);
+      return client.request(`${base}${invocationId}/retry/`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: '{}' });
+    }
+    throw new CliError(`Unknown invocation action: ${action}.`, EXIT.usage, 'unknown_action');
+  }
+  throw new CliError('Use `functions triggers`, `functions invoke`, or `functions invocations`.', EXIT.usage, 'invalid_function_command');
 }
 
 interface ProjectLink { schema: 'blinkhost/project-link/v1'; project_id: string; profile: string }

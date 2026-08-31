@@ -11,7 +11,7 @@ import { createScaffold } from './templates.js';
 import { ApiClient } from './api.js';
 import { login, logout } from './auth.js';
 import { activeProfile, readConfig, validateProfileName, writeConfig } from './config.js';
-import { openPreview, projectStatus, rawApi, readProjectLink, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
+import { openPreview, projectStatus, rawApi, readProjectLink, runFunctions, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
 import { checkForUpdate, ciCheck, completion, observability, runDev, runPlugins, supportBundle, testProject } from './workflows.js';
 import { documentationIndex, documentationTopic, quickstart, renderTopHelp, renderTopic, searchDocumentation, TOP_LEVEL_COMMANDS } from './guidance.js';
 import { VERSION, supportedNodeVersion } from './version.js';
@@ -71,7 +71,7 @@ function assertNoUnknown(args) {
 function parseModule(value) {
     const [name, language, extra] = value.split(':');
     if (extra || !name || !language || !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(name) || !SUPPORTED_MODULES.includes(language)) {
-        throw new CliError('Use --module name:language with a safe name and python, go or rust.', EXIT.usage, 'invalid_module');
+        throw new CliError('Use --module name:language with a safe name and rust, go, python, javascript or typescript.', EXIT.usage, 'invalid_module');
     }
     return { name, language: language };
 }
@@ -432,6 +432,10 @@ export async function main(argv = process.argv.slice(2)) {
         else if (command === 'secrets') {
             const data = await runSecrets(args, profile);
             emit({ ok: true, command, message: 'Secret operation completed.', data }, json);
+        }
+        else if (command === 'functions') {
+            const data = await runFunctions(args, profile);
+            emit({ ok: true, command, message: 'Function operation completed.', data }, json);
         }
         else if (command === 'dev') {
             const data = await runDev(args, json);

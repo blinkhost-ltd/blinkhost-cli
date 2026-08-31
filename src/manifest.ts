@@ -6,7 +6,7 @@ export const MANIFEST_FILENAME = 'blinkhost.yaml';
 export const MAX_MANIFEST_BYTES = 128 * 1024;
 export const SUPPORTED_FRONTENDS = ['astro', 'html', 'react', 'solid', 'svelte', 'vue'] as const;
 export const SUPPORTED_MANAGERS = ['bun', 'npm', 'pnpm', 'yarn'] as const;
-export const SUPPORTED_MODULES = ['go', 'python', 'rust'] as const;
+export const SUPPORTED_MODULES = ['go', 'javascript', 'python', 'rust', 'typescript'] as const;
 
 export type FrontendFramework = typeof SUPPORTED_FRONTENDS[number];
 export type PackageManager = typeof SUPPORTED_MANAGERS[number];
@@ -145,7 +145,7 @@ export function parseManifest(raw: string | Uint8Array): BlinkHostManifest {
     const path = normalizeRepositoryPath(module.path, `${field}.path`);
     const absolutePath = applicationRoot === '.' ? path : `${applicationRoot}/${path}`;
     const language = stringValue(module.language, `${field}.language`, 16).toLowerCase();
-    if (!SUPPORTED_MODULES.includes(language as ModuleLanguage)) fail(`${field}.language`, 'Only Rust, Go and Python modules are supported.');
+    if (!SUPPORTED_MODULES.includes(language as ModuleLanguage)) fail(`${field}.language`, 'Choose Rust, Go, Python, JavaScript or TypeScript Functions.');
     if (moduleNames.has(name)) fail(`${field}.name`, 'Module names must be unique.');
     if (modulePaths.has(absolutePath.toLowerCase())) fail(`${field}.path`, 'Module paths must be unique, including case.');
     moduleNames.add(name);

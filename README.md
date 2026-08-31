@@ -7,7 +7,7 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli
+npm install --global @blinkhost/cli@2.2.0
 blinkhost --version
 ```
 
@@ -46,20 +46,20 @@ Interactive credential storage uses macOS Keychain, Windows Password Vault, or L
 ## Create or adopt a project
 
 ```bash
-blinkhost create study-circle --template astro --module search:rust --module reminders:python --database PRIMARY_DB
+blinkhost create study-circle --template astro --module search:typescript --module reminders:python --database PRIMARY_DB
 cd study-circle
 blinkhost validate
 blinkhost projects link PROJECT_ID
 blinkhost dev
 ```
 
-Supported frontends are Astro, HTML, React, Solid, Svelte, and Vue. Backend modules may use Go, Python, or Rust. `blinkhost init` detects supported frontend metadata in an existing repository and creates `blinkhost.yaml` for review. Preview the exact result without writing anything first:
+Supported frontends are Astro, HTML, React, Solid, Svelte, and Vue. Backend modules may use Rust, Go, Python, JavaScript, or TypeScript. Python, JavaScript, and TypeScript Functions are beta capabilities with bounded runtime and dependency policies. `blinkhost init` detects supported frontend metadata and reviewed `_server_islands/*/blinkhost.toml` module declarations in an existing repository, then creates `blinkhost.yaml` for review. Preview the exact result without writing anything first:
 
 ```bash
 blinkhost init apps/storefront --dry-run --json
 ```
 
-`init` writes only `blinkhost.yaml`, refuses an existing manifest unless `--force` is explicitly supplied, and never rewrites application source. It does not guess backend services; add existing Go, Python, or Rust modules explicitly to the reviewed manifest. One manifest describes one deployable application. In a monorepo, select the application directory, or place the manifest at a build-context root that contains the app and its shared workspace packages; use separate BlinkHost projects for independently deployable apps.
+`init` writes only `blinkhost.yaml`, refuses an existing manifest unless `--force` is explicitly supplied, and never rewrites application source. It proposes only safe module declarations already present under `_server_islands`; review them and add other intended modules explicitly. One manifest describes one deployable application. In a monorepo, select the application directory, or place the manifest at a build-context root that contains the app and its shared workspace packages; use separate BlinkHost projects for independently deployable apps.
 
 Creation is atomic and refuses to replace an existing path. Dependency lifecycle scripts are disabled. Validation rejects unknown manifest fields, duplicate YAML keys, aliases, traversal, unsafe symbolic links, invalid cross-platform paths, duplicate module names, and missing declared inputs.
 
@@ -101,6 +101,23 @@ blinkhost previews delete PREVIEW_ID --confirm PREVIEW_ID
 ```
 
 Connected repository, release, approval, agency handoff, enterprise policy, and template APIs are available through `repositories`, `connections`, `builds`, `approvals`, `handoffs`, `policies`, and `templates`. Advanced customer API operations can use `blinkhost api METHOD /api/path/`; internal, staff, and authentication routes are blocked.
+
+## Function triggers and runs
+
+Manage beta event, schedule, and background triggers without using raw API routes:
+
+```bash
+blinkhost functions triggers list MODULE_ID
+blinkhost functions triggers create MODULE_ID --data @trigger.json
+blinkhost functions invoke run MODULE_ID TRIGGER_ID --data @payload.json --idempotency-key order-1042
+blinkhost functions invocations list MODULE_ID
+blinkhost functions invocations get MODULE_ID INVOCATION_ID
+blinkhost functions invocations result MODULE_ID INVOCATION_ID
+blinkhost functions invocations cancel MODULE_ID INVOCATION_ID
+blinkhost functions invocations retry MODULE_ID INVOCATION_ID --idempotency-key retry-order-1042
+```
+
+Payloads must be JSON objects no larger than 256 KiB. Use a stable idempotency key when repeating the same logical request. Runs remain subject to workspace roles, rollout availability, verified artifacts, runtime policy, and plan limits.
 
 ## Secrets and resources
 
@@ -160,7 +177,7 @@ Pin or roll back explicitly with `npm install --global @blinkhost/cli@VERSION`. 
 ```bash
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.1.0" \
+  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.2.0" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 ```

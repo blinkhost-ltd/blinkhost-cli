@@ -5,7 +5,7 @@ export const MANIFEST_FILENAME = 'blinkhost.yaml';
 export const MAX_MANIFEST_BYTES = 128 * 1024;
 export const SUPPORTED_FRONTENDS = ['astro', 'html', 'react', 'solid', 'svelte', 'vue'];
 export const SUPPORTED_MANAGERS = ['bun', 'npm', 'pnpm', 'yarn'];
-export const SUPPORTED_MODULES = ['go', 'python', 'rust'];
+export const SUPPORTED_MODULES = ['go', 'javascript', 'python', 'rust', 'typescript'];
 const TOP_LEVEL = new Set(['schema', 'application', 'frontend', 'modules', 'resources', 'preview', 'ignore']);
 const APPLICATION_FIELDS = new Set(['root']);
 const FRONTEND_FIELDS = new Set(['root', 'dependency_root', 'framework', 'package_manager', 'install', 'build', 'dev', 'output']);
@@ -127,7 +127,7 @@ export function parseManifest(raw) {
         const absolutePath = applicationRoot === '.' ? path : `${applicationRoot}/${path}`;
         const language = stringValue(module.language, `${field}.language`, 16).toLowerCase();
         if (!SUPPORTED_MODULES.includes(language))
-            fail(`${field}.language`, 'Only Rust, Go and Python modules are supported.');
+            fail(`${field}.language`, 'Choose Rust, Go, Python, JavaScript or TypeScript Functions.');
         if (moduleNames.has(name))
             fail(`${field}.name`, 'Module names must be unique.');
         if (modulePaths.has(absolutePath.toLowerCase()))

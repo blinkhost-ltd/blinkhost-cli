@@ -11,6 +11,7 @@ import { VERSION, supportedNodeVersion } from '../version.js';
 test('offline documentation is versioned, searchable, and command scoped', () => {
   assert.equal(documentationIndex().cli_version, VERSION);
   assert.equal(documentationTopic('create')?.name, 'create');
+  assert.equal(documentationTopic('functions')?.name, 'functions');
   assert.ok(searchDocumentation('credential').some((topic) => topic.name === 'auth' || topic.name === 'security'));
 });
 
