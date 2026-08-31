@@ -150,6 +150,19 @@ export async function runRemote(group, input, profile) {
 export async function runFunctions(input, profile) {
     const args = [...input];
     const resource = args.shift();
+    if (resource === 'status') {
+        let project = args.shift();
+        let selectedProfile = profile;
+        if (!project) {
+            const link = await readProjectLink();
+            project = link.project_id;
+            selectedProfile ||= link.profile;
+        }
+        const projectId = safeIdentifier(project, 'Project ID');
+        noExtra(args);
+        const client = await ApiClient.create(selectedProfile);
+        return client.request(`/api/backend-modules/rollout-status/?site_id=${projectId}`);
+    }
     const action = args.shift() || 'list';
     const moduleId = safeIdentifier(args.shift(), 'Module ID');
     const client = await ApiClient.create(profile);
@@ -217,7 +230,7 @@ export async function runFunctions(input, profile) {
         }
         throw new CliError(`Unknown invocation action: ${action}.`, EXIT.usage, 'unknown_action');
     }
-    throw new CliError('Use `functions triggers`, `functions invoke`, or `functions invocations`.', EXIT.usage, 'invalid_function_command');
+    throw new CliError('Use `functions status`, `functions triggers`, `functions invoke`, or `functions invocations`.', EXIT.usage, 'invalid_function_command');
 }
 export async function writeProjectLink(projectId, profile, root) {
     safeIdentifier(projectId, 'Project ID');

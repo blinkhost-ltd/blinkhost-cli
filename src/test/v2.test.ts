@@ -84,6 +84,31 @@ test('function invocation uses the dedicated API with bounded explicit idempoten
   }
 });
 
+test('function status uses the project-scoped capability endpoint', async () => {
+  const previousToken = process.env.BLINKHOST_ACCESS_TOKEN;
+  const previousFetch = globalThis.fetch;
+  process.env.BLINKHOST_ACCESS_TOKEN = 'test-workload-token';
+  let capturedUrl = '';
+  globalThis.fetch = async (input) => {
+    capturedUrl = String(input);
+    return new Response(JSON.stringify({ languages: {}, capabilities: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    await runFunctions(['status', '2a594fd8-cc93-47c1-864f-697765d5bd23']);
+    assert.equal(
+      capturedUrl,
+      'https://api.blinkhost.me/api/backend-modules/rollout-status/?site_id=2a594fd8-cc93-47c1-864f-697765d5bd23',
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.BLINKHOST_ACCESS_TOKEN;
+    else process.env.BLINKHOST_ACCESS_TOKEN = previousToken;
+  }
+});
+
 test('shell completion is deterministic', () => {
   assert.match(completion('bash'), /complete/);
   assert.match(completion('zsh'), /#compdef/);

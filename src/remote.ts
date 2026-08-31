@@ -132,6 +132,19 @@ export async function runRemote(group: string, input: string[], profile?: string
 export async function runFunctions(input: string[], profile?: string): Promise<unknown> {
   const args = [...input];
   const resource = args.shift();
+  if (resource === 'status') {
+    let project = args.shift();
+    let selectedProfile = profile;
+    if (!project) {
+      const link = await readProjectLink();
+      project = link.project_id;
+      selectedProfile ||= link.profile;
+    }
+    const projectId = safeIdentifier(project, 'Project ID');
+    noExtra(args);
+    const client = await ApiClient.create(selectedProfile);
+    return client.request(`/api/backend-modules/rollout-status/?site_id=${projectId}`);
+  }
   const action = args.shift() || 'list';
   const moduleId = safeIdentifier(args.shift(), 'Module ID');
   const client = await ApiClient.create(profile);
@@ -178,7 +191,7 @@ export async function runFunctions(input: string[], profile?: string): Promise<u
     }
     throw new CliError(`Unknown invocation action: ${action}.`, EXIT.usage, 'unknown_action');
   }
-  throw new CliError('Use `functions triggers`, `functions invoke`, or `functions invocations`.', EXIT.usage, 'invalid_function_command');
+  throw new CliError('Use `functions status`, `functions triggers`, `functions invoke`, or `functions invocations`.', EXIT.usage, 'invalid_function_command');
 }
 
 interface ProjectLink { schema: 'blinkhost/project-link/v1'; project_id: string; profile: string }

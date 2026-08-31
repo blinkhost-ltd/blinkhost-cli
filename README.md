@@ -7,7 +7,7 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.2.0
+npm install --global @blinkhost/cli@2.3.0
 blinkhost --version
 ```
 
@@ -107,6 +107,7 @@ Connected repository, release, approval, agency handoff, enterprise policy, and 
 Manage beta event, schedule, and background triggers without using raw API routes:
 
 ```bash
+blinkhost functions status [PROJECT_ID]
 blinkhost functions triggers list MODULE_ID
 blinkhost functions triggers create MODULE_ID --data @trigger.json
 blinkhost functions invoke run MODULE_ID TRIGGER_ID --data @payload.json --idempotency-key order-1042
@@ -117,7 +118,7 @@ blinkhost functions invocations cancel MODULE_ID INVOCATION_ID
 blinkhost functions invocations retry MODULE_ID INVOCATION_ID --idempotency-key retry-order-1042
 ```
 
-Payloads must be JSON objects no larger than 256 KiB. Use a stable idempotency key when repeating the same logical request. Runs remain subject to workspace roles, rollout availability, verified artifacts, runtime policy, and plan limits.
+`functions status` reports the effective language and trigger capabilities for a project; omit the project ID inside a linked directory. Payloads must be JSON objects no larger than 256 KiB. Use a stable idempotency key when repeating the same logical request. Runs remain subject to workspace roles, rollout availability, verified artifacts, runtime policy, and plan limits.
 
 ## Secrets and resources
 
@@ -177,7 +178,7 @@ Pin or roll back explicitly with `npm install --global @blinkhost/cli@VERSION`. 
 ```bash
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.2.0" \
+  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.3.0" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 ```
