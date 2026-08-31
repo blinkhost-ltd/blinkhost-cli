@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { ManifestError } from '../errors.js';
+import { detectManifest } from '../detect.js';
 import { parseManifest, serializeManifest } from '../manifest.js';
 import { validateProject, writeScaffoldAtomically } from '../project.js';
 import { createScaffold } from '../templates.js';
@@ -56,7 +57,7 @@ test('scaffold creation is atomic, refuses overwrite and validates declared file
 });
 test('every supported frontend and backend language produces the v1 contract', () => {
     for (const framework of ['astro', 'html', 'react', 'solid', 'svelte', 'vue']) {
-        for (const language of ['go', 'python', 'rust']) {
+        for (const language of ['go', 'javascript', 'python', 'rust', 'typescript']) {
             const scaffold = createScaffold({
                 name: 'portable-app', framework, packageManager: 'npm',
                 modules: [{ name: `service-${language}`, language }],
@@ -66,6 +67,19 @@ test('every supported frontend and backend language produces the v1 contract', (
             assert.equal(parsed.modules[0]?.language, language);
         }
     }
+});
+test('init detects only explicit safe function manifests', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'blinkhost-cli-detect-'));
+    const moduleRoot = join(root, '_server_islands', 'notifications');
+    await mkdir(moduleRoot, { recursive: true });
+    await writeFile(join(moduleRoot, 'blinkhost.toml'), 'language = "typescript-wasi"\nentrypoint = "index.ts"\nabi_version = "blinkhost-wasi-1"\nsdk_version = "1.1.0"\n');
+    const manifest = await detectManifest(root);
+    assert.deepEqual(manifest.modules, [{ name: 'notifications', path: '_server_islands/notifications', language: 'typescript', entrypoint: 'index.ts', abi: 'blinkhost-wasi-1', sdk: '1.1.0' }]);
+    await rm(root, { recursive: true, force: true });
+});
+test('unsupported function languages fail closed with an actionable message', () => {
+    const withRuby = valid.replace('modules: []', 'modules:\n  - name: api\n    path: _server_islands/api\n    language: ruby\n    entrypoint: main.rb\n    abi: blinkhost-wasi-1\n    sdk: 1.1.0');
+    assert.throws(() => parseManifest(withRuby), /Choose Rust, Go, Python, JavaScript or TypeScript Functions/);
 });
 test('validation rejects a symbolic-link manifest', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'blinkhost-cli-link-'));

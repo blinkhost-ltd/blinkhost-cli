@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { DEFAULT_API_ORIGIN, readConfig, validateApiOrigin, writeConfig } from '../config.js';
 import { CliError } from '../errors.js';
-import { rawApi, readProjectLink, writeProjectLink } from '../remote.js';
+import { rawApi, readProjectLink, runFunctions, writeProjectLink } from '../remote.js';
 import { completion, runPlugins, supportBundle } from '../workflows.js';
 
 test('profile configuration is private and API origins reject unsafe forms', async () => {
@@ -37,6 +37,50 @@ test('project links are explicit, local, and contain no credentials', async () =
 test('raw API blocks staff, internal, auth, and secret-bearing mutation paths before authentication', async () => {
   for (const [method, path] of ([['GET', '/api/internal/status/'], ['GET', '/api/ops/legal/'], ['POST', '/api/auth/login/'], ['POST', '/api/project-secrets/']] as Array<[string, string]>)) {
     await assert.rejects(rawApi([method, path]), CliError);
+  }
+});
+
+test('function invocation uses the dedicated API with bounded explicit idempotency', async () => {
+  const previousToken = process.env.BLINKHOST_ACCESS_TOKEN;
+  const previousFetch = globalThis.fetch;
+  process.env.BLINKHOST_ACCESS_TOKEN = 'test-workload-token';
+  let capturedUrl = '';
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = async (input, init) => {
+    capturedUrl = String(input);
+    capturedInit = init;
+    return new Response(JSON.stringify({ id: 'run-1', state: 'queued' }), {
+      status: 201,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    await runFunctions([
+      'invoke', 'run',
+      '6b1f7131-f314-4f10-b8b8-8e59a414fc4c',
+      'b92d7da6-137f-4e9a-8876-30d433d58548',
+      '--data', '{"record":42}',
+      '--idempotency-key', 'order-42',
+    ]);
+    assert.equal(capturedUrl, 'https://api.blinkhost.me/api/backend-modules/6b1f7131-f314-4f10-b8b8-8e59a414fc4c/triggers/b92d7da6-137f-4e9a-8876-30d433d58548/invoke/');
+    assert.equal(capturedInit?.method, 'POST');
+    const headers = new Headers(capturedInit?.headers);
+    assert.equal(headers.get('authorization'), 'Bearer test-workload-token');
+    assert.equal(headers.get('idempotency-key'), 'order-42');
+    assert.equal(capturedInit?.body, '{"payload":{"record":42}}');
+    await assert.rejects(
+      runFunctions([
+        'invocations', 'retry',
+        '6b1f7131-f314-4f10-b8b8-8e59a414fc4c',
+        'a837c2ea-9332-46fa-a786-bb77ac065064',
+        '--idempotency-key', 'unsafe\tkey',
+      ]),
+      /Idempotency keys/,
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousToken === undefined) delete process.env.BLINKHOST_ACCESS_TOKEN;
+    else process.env.BLINKHOST_ACCESS_TOKEN = previousToken;
   }
 });
 

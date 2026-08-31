@@ -67,6 +67,19 @@ function moduleFiles(module) {
         files.set(`${root}/main.go`, 'package main\n\nfunc main() {}\n');
         return { entrypoint: 'main.go', files };
     }
+    if (module.language === 'javascript' || module.language === 'typescript') {
+        const typescript = module.language === 'typescript';
+        const entrypoint = typescript ? 'index.ts' : 'index.js';
+        const runtime = typescript ? 'typescript-wasi' : 'javascript-wasi';
+        const packageName = `blinkhost-${module.name}-function`;
+        files.set(`${root}/blinkhost.toml`, `schema_version = 1\nlanguage = "${runtime}"\nentrypoint = "${entrypoint}"\nabi_version = "blinkhost-wasi-1"\nsdk_version = "1.1.0"\n`);
+        files.set(`${root}/package.json`, JSON.stringify({ name: packageName, version: '1.0.0', private: true, type: 'module' }, null, 2) + '\n');
+        files.set(`${root}/package-lock.json`, JSON.stringify({ name: packageName, version: '1.0.0', lockfileVersion: 3, requires: true, packages: { '': { name: packageName, version: '1.0.0' } } }, null, 2) + '\n');
+        const declaration = typescript ? 'interface FunctionRequest { json(): unknown }\n\n' : '';
+        const annotation = typescript ? ': FunctionRequest' : '';
+        files.set(`${root}/${entrypoint}`, `${declaration}export default function handler(request${annotation}) {\n  return {\n    status: 200,\n    headers: { 'content-type': 'application/json' },\n    body: JSON.stringify({ ok: true, received: request.json() }),\n  };\n}\n`);
+        return { entrypoint, files };
+    }
     files.set(`${root}/Cargo.toml`, `[package]\nname = "${module.name}"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\ncrate-type = ["cdylib"]\n`);
     files.set(`${root}/src/lib.rs`, '#[no_mangle]\npub extern "C" fn blinkhost_module_version() -> u32 { 1 }\n');
     return { entrypoint: 'src/lib.rs', files };

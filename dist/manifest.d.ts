@@ -3,7 +3,7 @@ export declare const MANIFEST_FILENAME = "blinkhost.yaml";
 export declare const MAX_MANIFEST_BYTES: number;
 export declare const SUPPORTED_FRONTENDS: readonly ["astro", "html", "react", "solid", "svelte", "vue"];
 export declare const SUPPORTED_MANAGERS: readonly ["bun", "npm", "pnpm", "yarn"];
-export declare const SUPPORTED_MODULES: readonly ["go", "python", "rust"];
+export declare const SUPPORTED_MODULES: readonly ["go", "javascript", "python", "rust", "typescript"];
 export type FrontendFramework = typeof SUPPORTED_FRONTENDS[number];
 export type PackageManager = typeof SUPPORTED_MANAGERS[number];
 export type ModuleLanguage = typeof SUPPORTED_MODULES[number];

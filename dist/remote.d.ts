@@ -1,4 +1,5 @@
 export declare function runRemote(group: string, input: string[], profile?: string): Promise<unknown>;
+export declare function runFunctions(input: string[], profile?: string): Promise<unknown>;
 interface ProjectLink {
     schema: 'blinkhost/project-link/v1';
     project_id: string;

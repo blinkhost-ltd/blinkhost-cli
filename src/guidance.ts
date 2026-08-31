@@ -56,7 +56,7 @@ const TOPICS: Record<string, DocumentationTopic> = {
   init: {
     name: 'init', title: 'Adopt an existing repository', summary: 'Detect supported project metadata and write a reviewable blinkhost.yaml.',
     usage: ['blinkhost init [path] [--dry-run|--force]'],
-    details: ['Detection reads package.json dependencies and the pnpm, Yarn, Bun or npm lockfile at the selected application root. It recognizes Astro, React, Vue, Svelte and Solid; a directory without recognized framework metadata is described as static HTML.', '`--dry-run` returns the proposed manifest and writes nothing. Without it, init writes only blinkhost.yaml and refuses an existing manifest. `--force` replaces only an existing regular blinkhost.yaml after explicit use; application source and configuration are never rewritten.', 'Detection does not guess backend services. Review the proposal and add each Go, Python or Rust module explicitly before validation.', 'One manifest represents one deployable application. For a nested app, pass that directory. For a workspace app that imports shared packages, place the manifest at a root containing the complete build context and set frontend.root and frontend.dependency_root explicitly. Use separate application roots and BlinkHost projects for independently deployable monorepo applications.'],
+    details: ['Detection reads package.json dependencies and the pnpm, Yarn, Bun or npm lockfile at the selected application root. It recognizes Astro, React, Vue, Svelte and Solid; a directory without recognized framework metadata is described as static HTML.', '`--dry-run` returns the proposed manifest and writes nothing. Without it, init writes only blinkhost.yaml and refuses an existing manifest. `--force` replaces only an existing regular blinkhost.yaml after explicit use; application source and configuration are never rewritten.', 'Detection proposes modules only from safe, regular blinkhost.toml files under _server_islands. Review every detected module before validation; other backend directories are never silently registered.', 'One manifest represents one deployable application. For a nested app, pass that directory. For a workspace app that imports shared packages, place the manifest at a root containing the complete build context and set frontend.root and frontend.dependency_root explicitly. Use separate application roots and BlinkHost projects for independently deployable monorepo applications.'],
     examples: ['blinkhost init . --dry-run --json', 'blinkhost init apps/storefront', 'blinkhost docs manifest-reference'], related: ['validate', 'manifest-reference', 'projects'], url: DOCUMENTATION_URL,
   },
   validate: {
@@ -93,8 +93,14 @@ const TOPICS: Record<string, DocumentationTopic> = {
   previews: resource('previews', 'Manage temporary preview environments.', ['`previews wait ID [--timeout 10..3600]` waits for a terminal state. `previews open ID` accepts only trusted BlinkHost HTTPS preview hosts. Preview operations can consume plan resources.']),
   builds: resource('builds', 'Create, inspect and wait for verified builds.', ['`builds wait ID [--timeout 10..3600]` stops on success, failure, cancellation, expiry or timeout. Builds can consume plan resources.']),
   deployments: resource('deployments', 'Manage production deployments and protected release actions.', ['Rollback uses `deployments action DEPLOYMENT_ID rollback --data @rollback.json`. Protected environments can require approval and a verified artifact. Deployment operations can consume plan resources.']),
-  modules: resource('modules', 'Manage Rust, Go and Python backend modules.'),
-  databases: resource('databases', 'Manage database resources.', ['Database list, get, create, update, delete and supported server actions are remote and may require plan capacity or protected-environment approval.', 'CLI v2.1 does not invent local backup, restore, credential-rotation or migration semantics. Use only actions returned by the active workspace API and consult the detailed database guide before production data changes. Deletion retains exact-ID confirmation and server authorization.']),
+  modules: resource('modules', 'Manage Rust, Go, Python, JavaScript and TypeScript Functions.'),
+  functions: {
+    name: 'functions', title: 'Function triggers and runs', summary: 'Manage beta event, schedule and background triggers with explicit retry and idempotency controls.',
+    usage: ['blinkhost functions triggers list MODULE_ID', 'blinkhost functions triggers create MODULE_ID --data @trigger.json', 'blinkhost functions triggers update MODULE_ID TRIGGER_ID --data @trigger.json', 'blinkhost functions triggers delete MODULE_ID TRIGGER_ID --confirm TRIGGER_ID', 'blinkhost functions invoke run MODULE_ID TRIGGER_ID --data @payload.json [--idempotency-key KEY]', 'blinkhost functions invocations list MODULE_ID', 'blinkhost functions invocations get|result|cancel MODULE_ID INVOCATION_ID', 'blinkhost functions invocations retry MODULE_ID INVOCATION_ID [--idempotency-key KEY]'],
+    details: ['Event, schedule and background triggers are beta capabilities and may be enabled progressively by workspace. Workspace roles, runtime policy, verified artifacts, plan limits and the service rollout gate remain authoritative.', 'Payloads must be JSON objects no larger than 256 KiB. Results are bounded by the service. Use a stable idempotency key when repeating the same logical request; otherwise the CLI generates one for each submission.', 'Delivery is at least once. Handlers that can create duplicate writes, messages or charges must be idempotent. Cancellation cannot undo application work that has already completed.'],
+    examples: ['blinkhost functions triggers list MODULE_ID --json', 'blinkhost functions invoke run MODULE_ID TRIGGER_ID --data @payload.json --idempotency-key order-1042 --json'], related: ['modules', 'automation', 'limits', 'troubleshooting'], url: DOCUMENTATION_URL,
+  },
+  databases: resource('databases', 'Manage database resources.', ['Database list, get, create, update, delete and supported server actions are remote and may require plan capacity or protected-environment approval.', 'The CLI does not invent local backup, restore, credential-rotation or migration semantics. Use only actions returned by the active workspace API and consult the detailed database guide before production data changes. Deletion retains exact-ID confirmation and server authorization.']),
   bindings: resource('bindings', 'Manage explicit application-to-resource bindings.'),
   assets: resource('assets', 'Manage project assets.', ['Upload with `assets upload FILE --project PROJECT_ID [--parent ID] [--revision VALUE] [--replace ID]`. Uploads accept listed image, font, MP3 and MP4 types, reject symbolic links, verify SHA-256 and count against plan storage.']),
   organizations: resource('organizations', 'Manage organizations within the permissions granted to your account.'),
@@ -142,7 +148,7 @@ const TOPICS: Record<string, DocumentationTopic> = {
   },
   glossary: {
     name: 'glossary', title: 'BlinkHost terminology', summary: 'Translate platform terms into the developer actions they represent.', usage: ['blinkhost docs glossary'],
-    details: ['Project: one deployable application and its resources. Module: a Go, Python or Rust backend service declared by that project. Binding: an explicit connection between application code and a managed resource.', 'Preview: a temporary environment for reviewing a change. Build: compilation and verification of source. Deployment: promotion of a verified artifact to an environment.', 'Profile: a local named account configuration. Workload: a narrowly scoped short-lived automation identity. Approval: a required authorized decision before a protected action. Handoff: an audited transfer of agency or team responsibility.'],
+    details: ['Project: one deployable application and its resources. Module: a Rust, Go, Python, JavaScript or TypeScript Function declared by that project. Binding: an explicit connection between application code and a managed resource.', 'Preview: a temporary environment for reviewing a change. Build: compilation and verification of source. Deployment: promotion of a verified artifact to an environment.', 'Profile: a local named account configuration. Workload: a narrowly scoped short-lived automation identity. Approval: a required authorized decision before a protected action. Handoff: an audited transfer of agency or team responsibility.'],
     examples: ['blinkhost docs manifest-reference', 'blinkhost docs limits'], related: ['commands', 'manifest-reference'], url: DOCUMENTATION_URL,
   },
   portability: {
@@ -170,7 +176,7 @@ const TOPICS: Record<string, DocumentationTopic> = {
 
 const COMMANDS = [
   'quickstart', 'docs', 'create', 'init', 'validate', 'manifest', 'doctor', 'test', 'auth', 'profile', 'projects',
-  'repositories', 'connections', 'previews', 'builds', 'deployments', 'modules', 'databases', 'bindings', 'assets',
+  'repositories', 'connections', 'previews', 'builds', 'deployments', 'modules', 'functions', 'databases', 'bindings', 'assets',
   'secrets', 'organizations', 'templates', 'approvals', 'handoffs', 'policies', 'workloads', 'dev', 'logs', 'metrics',
   'analytics', 'support', 'completion', 'update', 'ci', 'plugins', 'api',
 ] as const;
@@ -259,7 +265,7 @@ export async function quickstart(path?: string): Promise<Record<string, unknown>
     capabilities: {
       frontends: SUPPORTED_FRONTENDS, package_managers: SUPPORTED_MANAGERS, backend_modules: SUPPORTED_MODULES,
       local: ['create', 'init', 'validate', 'manifest', 'doctor', 'test', 'dev', 'docs'],
-      remote: ['projects', 'repositories', 'previews', 'builds', 'deployments', 'modules', 'databases', 'assets'],
+      remote: ['projects', 'repositories', 'previews', 'builds', 'deployments', 'modules', 'functions', 'databases', 'assets'],
       remote_requirements: 'Authentication, workspace permission, plan capacity, and approval where applicable.',
     },
     next_steps: nextSteps,
