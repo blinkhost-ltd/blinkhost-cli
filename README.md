@@ -7,11 +7,21 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.3.0
+npm install --global @blinkhost/cli@2.4.0
 blinkhost --version
 ```
 
 Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verification bundle are available at <https://github.com/blinkhost-ltd/blinkhost-cli/releases>.
+
+## Current release
+
+### 2.4.0 — release intelligence and compatibility guidance
+
+- Added `blinkhost update notes [VERSION]` for terminal-accessible, verified release history.
+- Added cached, time-bounded update awareness that stays silent in CI, structured output, and non-interactive sessions.
+- CLI token refresh now records the installed client version so project compatibility guidance does not rely on a stale login record.
+
+Run `blinkhost update notes` to read published notes in the terminal. The complete version history and compatibility policy are maintained in [CHANGELOG.md](./CHANGELOG.md) and the [developer release notes](https://app.blinkhost.me/docs/releases).
 
 ## Start safely
 
@@ -166,19 +176,21 @@ Stable exit codes distinguish usage, validation, filesystem, authentication, net
 ```bash
 blinkhost completion bash   # also zsh, fish, or powershell
 blinkhost update check
+blinkhost update notes
+blinkhost update notes 2.4.0
 blinkhost plugins add /absolute/path/to/plugin --name example
 blinkhost plugins verify example
 blinkhost plugins run example -- arguments
 ```
 
-Update checks never install software. Plugins require explicit local approval, are pinned to their executable SHA-256 digest, stop when the executable changes, and receive neither BlinkHost credentials nor the parent environment. A plugin is still third-party code running with your operating-system account; review it before adding it.
+Update checks never install software. At most once every 48 hours, an interactive terminal may perform a cached, time-bounded check after a successful command and print one upgrade line. Checks are suppressed in CI, JSON output, and non-interactive sessions; set `BLINKHOST_NO_UPDATE_NOTIFIER=1` to suppress them explicitly. Plugins require explicit local approval, are pinned to their executable SHA-256 digest, stop when the executable changes, and receive neither BlinkHost credentials nor the parent environment. A plugin is still third-party code running with your operating-system account; review it before adding it.
 
 Pin or roll back explicitly with `npm install --global @blinkhost/cli@VERSION`. Tagged packages are published from the `blinkhost-ltd/blinkhost-cli` release workflow through npm Trusted Publishing with provenance. To verify a downloaded GitHub release, first run `sha256sum --check SHA256SUMS`, then verify its Sigstore bundle:
 
 ```bash
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.3.0" \
+  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.4.0" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 ```

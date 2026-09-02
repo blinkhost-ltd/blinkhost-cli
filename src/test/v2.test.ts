@@ -6,7 +6,7 @@ import test from 'node:test';
 import { DEFAULT_API_ORIGIN, readConfig, validateApiOrigin, writeConfig } from '../config.js';
 import { CliError } from '../errors.js';
 import { rawApi, readProjectLink, runFunctions, writeProjectLink } from '../remote.js';
-import { completion, runPlugins, supportBundle } from '../workflows.js';
+import { checkForUpdate, completion, releaseNotes, runPlugins, supportBundle } from '../workflows.js';
 
 test('profile configuration is private and API origins reject unsafe forms', async () => {
   const root = await mkdtemp(join(tmpdir(), 'blinkhost-config-'));
@@ -16,13 +16,33 @@ test('profile configuration is private and API origins reject unsafe forms', asy
     assert.equal(validateApiOrigin(DEFAULT_API_ORIGIN), DEFAULT_API_ORIGIN);
     assert.throws(() => validateApiOrigin('http://api.example.com'), CliError);
     assert.throws(() => validateApiOrigin('https://user:secret@example.com'), CliError);
-    await writeConfig({ activeProfile: 'work', profiles: { work: { apiOrigin: DEFAULT_API_ORIGIN } } });
-    assert.equal((await readConfig()).activeProfile, 'work');
+    await writeConfig({ activeProfile: 'work', profiles: { work: { apiOrigin: DEFAULT_API_ORIGIN } }, updateCheckedAt: '2026-09-02T00:00:00.000Z', latestVersion: '2.4.0' });
+    const config = await readConfig();
+    assert.equal(config.activeProfile, 'work');
+    assert.equal(config.latestVersion, '2.4.0');
     assert.equal((await stat(join(root, 'config.json'))).mode & 0o777, 0o600);
   } finally {
     if (previous === undefined) delete process.env.BLINKHOST_CONFIG_HOME;
     else process.env.BLINKHOST_CONFIG_HOME = previous;
   }
+});
+
+test('release checks and notes use the public BlinkHost registry without installing', async () => {
+  const previousFetch = globalThis.fetch;
+  const urls: string[] = [];
+  globalThis.fetch = async (input) => {
+    urls.push(String(input));
+    if (String(input).includes('/latest/')) return new Response(JSON.stringify({ current_version: '2.4.0', latest_version: '2.5.0', update_available: true, release_url: 'https://app.blinkhost.me/docs/releases/cli/2.5.0', install_command: 'npm install --global @blinkhost/cli@2.5.0' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify([{ component: 'cli', version: '2.5.0', summary: 'Example' }]), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const update = await checkForUpdate() as { latest_version: string; automatic_install: boolean };
+    assert.equal(update.latest_version, '2.5.0');
+    assert.equal(update.automatic_install, false);
+    const notes = await releaseNotes('2.5.0') as { version: string };
+    assert.equal(notes.version, '2.5.0');
+    assert.match(urls[0] || '', /api\/documentation\/releases\/latest/);
+  } finally { globalThis.fetch = previousFetch; }
 });
 
 test('project links are explicit, local, and contain no credentials', async () => {

@@ -54,7 +54,7 @@ test('scaffold creation is atomic, refuses overwrite and validates declared file
   await writeScaffoldAtomically(target, scaffold.files, scaffold.manifest);
   const result = await validateProject(target);
   assert.deepEqual(result.errors, []);
-  assert.equal(result.manifest.modules[0]?.entrypoint, 'src/lib.rs');
+  assert.equal(result.manifest.modules[0]?.entrypoint, 'src/main.rs');
   await assert.rejects(() => writeScaffoldAtomically(target, scaffold.files, scaffold.manifest));
   await rm(parent, { recursive: true, force: true });
 });
@@ -69,6 +69,11 @@ test('every supported frontend and backend language produces the v1 contract', (
       const parsed = parseManifest(serializeManifest(scaffold.manifest));
       assert.equal(parsed.frontend.framework, framework);
       assert.equal(parsed.modules[0]?.language, language);
+      assert.equal(parsed.modules[0]?.sdk, '1.1.0');
+      assert.equal(scaffold.files.has(`_server_islands/service-${language}/blinkhost.toml`), true);
+      if (language === 'python') {
+        assert.equal(scaffold.files.has('_server_islands/service-python/requirements.txt'), false);
+      }
     }
   }
 });

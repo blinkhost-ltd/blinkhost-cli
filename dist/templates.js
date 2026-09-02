@@ -58,13 +58,14 @@ function moduleFiles(module) {
     const root = `_server_islands/${module.name}`;
     const files = new Map();
     if (module.language === 'python') {
-        files.set(`${root}/main.py`, 'def handler(request):\n    return {"status": 200, "body": {"ok": True}}\n');
-        files.set(`${root}/requirements.txt`, '# Add pinned runtime dependencies here.\n');
+        files.set(`${root}/blinkhost.toml`, 'schema_version = 1\nlanguage = "python-wasi"\nentrypoint = "main.py"\nabi_version = "blinkhost-wasi-1"\nsdk_version = "1.1.0"\n');
+        files.set(`${root}/main.py`, 'import blinkhost\n\nblinkhost.respond(blinkhost.Response.json({"ok": True}))\n');
         return { entrypoint: 'main.py', files };
     }
     if (module.language === 'go') {
-        files.set(`${root}/go.mod`, `module blinkhost/${module.name}\n\ngo 1.23\n`);
-        files.set(`${root}/main.go`, 'package main\n\nfunc main() {}\n');
+        files.set(`${root}/blinkhost.toml`, 'schema_version = 1\nlanguage = "go-wasi"\nentrypoint = "main.go"\nabi_version = "blinkhost-wasi-1"\nsdk_version = "1.1.0"\n');
+        files.set(`${root}/go.mod`, `module blinkhost/${module.name}\n\ngo 1.24\n\nrequire blinkhost.dev/sdk/go v1.1.0\n\nreplace blinkhost.dev/sdk/go => /opt/blinkhost-sdk/go\n`);
+        files.set(`${root}/main.go`, 'package main\n\nimport "blinkhost.dev/sdk/go/blinkhost"\n\nfunc main() {\n\tresponse, err := blinkhost.JSONResponse(200, map[string]bool{"ok": true})\n\tif err != nil || blinkhost.Respond(response) != nil {\n\t\tpanic("BlinkHost response write failed")\n\t}\n}\n');
         return { entrypoint: 'main.go', files };
     }
     if (module.language === 'javascript' || module.language === 'typescript') {
@@ -80,9 +81,10 @@ function moduleFiles(module) {
         files.set(`${root}/${entrypoint}`, `${declaration}export default function handler(request${annotation}) {\n  return {\n    status: 200,\n    headers: { 'content-type': 'application/json' },\n    body: JSON.stringify({ ok: true, received: request.json() }),\n  };\n}\n`);
         return { entrypoint, files };
     }
-    files.set(`${root}/Cargo.toml`, `[package]\nname = "${module.name}"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\ncrate-type = ["cdylib"]\n`);
-    files.set(`${root}/src/lib.rs`, '#[no_mangle]\npub extern "C" fn blinkhost_module_version() -> u32 { 1 }\n');
-    return { entrypoint: 'src/lib.rs', files };
+    files.set(`${root}/blinkhost.toml`, 'schema_version = 1\nlanguage = "rust-wasi"\nentrypoint = "src/main.rs"\nabi_version = "blinkhost-wasi-1"\nsdk_version = "1.1.0"\n');
+    files.set(`${root}/Cargo.toml`, `[package]\nname = "${module.name}"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\nblinkhost-sdk = { path = "/opt/blinkhost-sdk/rust", version = "=1.1.0" }\n\n[profile.release]\ncodegen-units = 1\nlto = true\nopt-level = "s"\npanic = "abort"\nstrip = true\n`);
+    files.set(`${root}/src/main.rs`, 'use blinkhost_sdk::{respond, Response};\n\nfn main() {\n    if respond(Response::json(200, r#"{"ok":true}"#)).is_err() {\n        std::process::abort();\n    }\n}\n');
+    return { entrypoint: 'src/main.rs', files };
 }
 export function createScaffold(options) {
     const packageCommands = commands(options.packageManager);
@@ -92,7 +94,7 @@ export function createScaffold(options) {
         const generated = moduleFiles(item);
         for (const [path, contents] of generated.files)
             files.set(path, contents);
-        modules.push({ name: item.name, path: `_server_islands/${item.name}`, language: item.language, entrypoint: generated.entrypoint, abi: 'blinkhost-wasi-1', sdk: '1.1' });
+        modules.push({ name: item.name, path: `_server_islands/${item.name}`, language: item.language, entrypoint: generated.entrypoint, abi: 'blinkhost-wasi-1', sdk: '1.1.0' });
     }
     const databases = options.database ? [{ binding: options.database, schema: `database/${options.database}/schema.sql`, migrations: `database/${options.database}/migrations` }] : [];
     if (options.database) {

@@ -4,7 +4,7 @@ import { hostname, platform, release } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { ApiClient } from './api.js';
-import { readConfig, writeConfig } from './config.js';
+import { activeProfile, readConfig, writeConfig } from './config.js';
 import { CliError, EXIT } from './errors.js';
 import { readProjectManifest, resolveLocalPath, validateProject } from './project.js';
 import { readProjectLink } from './remote.js';
@@ -177,12 +177,84 @@ const COMPLETIONS = {
 };
 export function completion(shell) { if (!shell || !COMPLETIONS[shell])
     throw new CliError('Choose bash, zsh, fish, or powershell.', EXIT.usage, 'invalid_shell'); return `${COMPLETIONS[shell]}\n`; }
-export async function checkForUpdate() {
-    const response = await fetch('https://api.github.com/repos/blinkhost-ltd/blinkhost-cli/releases/latest', { headers: { Accept: 'application/vnd.github+json', 'User-Agent': `BlinkHost-CLI/${VERSION}` }, redirect: 'error' });
+function versionTuple(value) {
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/.exec(value);
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
+function newerThan(candidate, current) {
+    const left = versionTuple(candidate);
+    const right = versionTuple(current);
+    if (!left || !right)
+        return false;
+    for (let index = 0; index < 3; index += 1) {
+        const candidatePart = left[index] ?? 0;
+        const currentPart = right[index] ?? 0;
+        if (candidatePart !== currentPart)
+            return candidatePart > currentPart;
+    }
+    return false;
+}
+async function releaseRequest(path, profile, timeoutMs = 3000) {
+    const selected = await activeProfile(profile);
+    return fetch(`${selected.profile.apiOrigin}${path}`, {
+        headers: { Accept: 'application/json', 'User-Agent': `BlinkHost-CLI/${VERSION}` },
+        redirect: 'error',
+        signal: AbortSignal.timeout(timeoutMs),
+    });
+}
+export async function checkForUpdate(profile, timeoutMs = 3000) {
+    const query = new URLSearchParams({ component: 'cli', channel: 'stable', current_version: VERSION });
+    const response = await releaseRequest(`/api/documentation/releases/latest/?${query}`, profile, timeoutMs);
     if (!response.ok)
         throw new CliError('The release service could not be reached.', EXIT.network, 'update_check_failed');
     const data = await response.json();
-    return { current_version: VERSION, latest_version: data.tag_name?.replace(/^v/, '') || null, release_url: data.html_url || null, automatic_install: false };
+    return { ...data, current_version: VERSION, automatic_install: false };
+}
+export async function releaseNotes(version, profile) {
+    const query = new URLSearchParams({ component: 'cli', channel: 'stable' });
+    const response = await releaseRequest(`/api/documentation/releases/?${query}`, profile);
+    if (!response.ok)
+        throw new CliError('Release notes could not be loaded.', EXIT.network, 'release_notes_failed');
+    const payload = await response.json();
+    const rows = Array.isArray(payload) ? payload : (payload.results || []);
+    const releases = rows.filter((item) => Boolean(item && typeof item === 'object'));
+    if (version) {
+        const selected = releases.find((item) => item.version === version);
+        if (!selected)
+            throw new CliError(`No published CLI release notes were found for ${version}.`, EXIT.remote, 'release_not_found');
+        return selected;
+    }
+    return { component: 'cli', releases };
+}
+export async function maybeUpdateNotice(profile) {
+    if (!process.stderr.isTTY || process.env.CI || process.env.BLINKHOST_NO_UPDATE_NOTIFIER === '1')
+        return null;
+    const selected = await activeProfile(profile);
+    if (selected.config.updateNotifications === false)
+        return null;
+    const checkedAt = selected.config.updateCheckedAt ? Date.parse(selected.config.updateCheckedAt) : 0;
+    if (Number.isFinite(checkedAt) && Date.now() - checkedAt < 48 * 60 * 60 * 1000)
+        return null;
+    try {
+        const result = await checkForUpdate(profile, 500);
+        selected.config.updateCheckedAt = new Date().toISOString();
+        if (result.latest_version)
+            selected.config.latestVersion = result.latest_version;
+        else
+            delete selected.config.latestVersion;
+        if (result.release_url)
+            selected.config.latestReleaseUrl = result.release_url;
+        else
+            delete selected.config.latestReleaseUrl;
+        await writeConfig(selected.config);
+        if (!result.latest_version || !newerThan(result.latest_version, VERSION))
+            return null;
+        const instruction = result.install_command || `npm install --global @blinkhost/cli@${result.latest_version}`;
+        return `BlinkHost CLI ${result.latest_version} is available. Run ${instruction} or \`blinkhost update notes ${result.latest_version}\`.`;
+    }
+    catch {
+        return null;
+    }
 }
 export async function ciCheck(profile) {
     const client = await ApiClient.create(profile);

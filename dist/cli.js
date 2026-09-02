@@ -12,7 +12,7 @@ import { ApiClient } from './api.js';
 import { login, logout } from './auth.js';
 import { activeProfile, readConfig, validateProfileName, writeConfig } from './config.js';
 import { openPreview, projectStatus, rawApi, readProjectLink, runFunctions, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
-import { checkForUpdate, ciCheck, completion, observability, runDev, runPlugins, supportBundle, testProject } from './workflows.js';
+import { checkForUpdate, ciCheck, completion, maybeUpdateNotice, observability, releaseNotes, runDev, runPlugins, supportBundle, testProject } from './workflows.js';
 import { documentationIndex, documentationTopic, quickstart, renderTopHelp, renderTopic, searchDocumentation, TOP_LEVEL_COMMANDS } from './guidance.js';
 import { VERSION, supportedNodeVersion } from './version.js';
 let quietOutput = false;
@@ -457,10 +457,21 @@ export async function main(argv = process.argv.slice(2)) {
             else
                 process.stdout.write(output);
         }
-        else if (command === 'update' && args.shift() === 'check') {
-            assertNoUnknown(args);
-            const data = await checkForUpdate();
-            emit({ ok: true, command: 'update check', message: 'Release check completed.', data }, json);
+        else if (command === 'update') {
+            const action = args.shift() || 'check';
+            if (action === 'check') {
+                assertNoUnknown(args);
+                const data = await checkForUpdate(profile);
+                emit({ ok: true, command: 'update check', message: 'Release check completed. Updates are never installed automatically.', data }, json);
+            }
+            else if (action === 'notes') {
+                const version = args.shift();
+                assertNoUnknown(args);
+                const data = await releaseNotes(version, profile);
+                emit({ ok: true, command: 'update notes', message: version ? `Release notes for ${version}.` : 'Published CLI release notes.', data }, json);
+            }
+            else
+                throw new CliError(`Unknown update action: ${action}.`, EXIT.usage, 'unknown_action');
         }
         else if (command === 'ci' && args.shift() === 'check') {
             assertNoUnknown(args);
@@ -478,6 +489,11 @@ export async function main(argv = process.argv.slice(2)) {
         else {
             const suggestion = commandSuggestion(command);
             throw new CliError(`Unknown command: ${command}.${suggestion ? ` Did you mean \`${suggestion}\`?` : ' Run `blinkhost docs` to list commands.'}`, EXIT.usage, 'unknown_command');
+        }
+        if (!json && !quietOutput && !nonInteractive && command !== 'update') {
+            const notice = await maybeUpdateNotice(profile);
+            if (notice)
+                process.stderr.write(`\n${terminalText(notice)}\n`);
         }
         return EXIT.success;
     }
