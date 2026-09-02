@@ -41,7 +41,15 @@ export async function readConfig() {
                 continue;
             profiles[name] = { ...profile, apiOrigin: validateApiOrigin(profile.apiOrigin) };
         }
-        return { activeProfile: validateProfileName(parsed.activeProfile || 'default'), profiles, plugins: parsed.plugins || {} };
+        return {
+            activeProfile: validateProfileName(parsed.activeProfile || 'default'),
+            profiles,
+            plugins: parsed.plugins || {},
+            ...(typeof parsed.updateCheckedAt === 'string' ? { updateCheckedAt: parsed.updateCheckedAt } : {}),
+            ...(typeof parsed.latestVersion === 'string' ? { latestVersion: parsed.latestVersion } : {}),
+            ...(typeof parsed.latestReleaseUrl === 'string' ? { latestReleaseUrl: parsed.latestReleaseUrl } : {}),
+            ...(typeof parsed.updateNotifications === 'boolean' ? { updateNotifications: parsed.updateNotifications } : {}),
+        };
     }
     catch (error) {
         if (error.code === 'ENOENT')

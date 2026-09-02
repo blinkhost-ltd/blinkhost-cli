@@ -6,7 +6,15 @@ import { CliError, EXIT } from './errors.js';
 export const DEFAULT_API_ORIGIN = 'https://api.blinkhost.me';
 export interface Profile { apiOrigin: string; username?: string; userId?: number }
 export interface PluginRecord { executable: string; sha256: string; addedAt: string }
-export interface CliConfig { activeProfile: string; profiles: Record<string, Profile>; plugins?: Record<string, PluginRecord>; updateCheckedAt?: string; latestVersion?: string }
+export interface CliConfig {
+  activeProfile: string;
+  profiles: Record<string, Profile>;
+  plugins?: Record<string, PluginRecord>;
+  updateCheckedAt?: string;
+  latestVersion?: string;
+  latestReleaseUrl?: string;
+  updateNotifications?: boolean;
+}
 
 function configRoot(): string {
   const override = process.env.BLINKHOST_CONFIG_HOME;
@@ -41,7 +49,15 @@ export async function readConfig(): Promise<CliConfig> {
       if (!profile || typeof profile !== 'object') continue;
       profiles[name] = { ...profile, apiOrigin: validateApiOrigin(profile.apiOrigin) };
     }
-    return { activeProfile: validateProfileName(parsed.activeProfile || 'default'), profiles, plugins: parsed.plugins || {} };
+    return {
+      activeProfile: validateProfileName(parsed.activeProfile || 'default'),
+      profiles,
+      plugins: parsed.plugins || {},
+      ...(typeof parsed.updateCheckedAt === 'string' ? { updateCheckedAt: parsed.updateCheckedAt } : {}),
+      ...(typeof parsed.latestVersion === 'string' ? { latestVersion: parsed.latestVersion } : {}),
+      ...(typeof parsed.latestReleaseUrl === 'string' ? { latestReleaseUrl: parsed.latestReleaseUrl } : {}),
+      ...(typeof parsed.updateNotifications === 'boolean' ? { updateNotifications: parsed.updateNotifications } : {}),
+    };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { activeProfile: 'default', profiles: {} };
     if (error instanceof CliError) throw error;

@@ -15,6 +15,8 @@ export interface CliConfig {
     plugins?: Record<string, PluginRecord>;
     updateCheckedAt?: string;
     latestVersion?: string;
+    latestReleaseUrl?: string;
+    updateNotifications?: boolean;
 }
 export declare function configPath(): string;
 export declare function validateProfileName(value: string): string;
