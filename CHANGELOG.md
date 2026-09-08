@@ -4,10 +4,16 @@ This file records customer-visible CLI changes. BlinkHost uses semantic versioni
 
 ## Unreleased — Idam staff preview
 
+- Added `projects export PROJECT_UUID --source-only --output ./source.zip` for
+  backend-only projects and unchanged source downloads. No build configuration,
+  README, schema or lockfile is generated or validated. The server must confirm
+  the requested mode. Access checks, credential screening and download limits
+  remain in effect; default portable exports are unchanged.
+
 - Added safe, actionable source-export guidance for unsupported frontend
   configurations, HTML package/lockfile issues and credential-screening blocks.
   Error bodies are bounded and never printed; unknown failures retain their HTTP
-  status and request ID. Offline help documents the backend-only export limit.
+  status and request ID. Offline help explains portable and source-only exports.
 
 - Fixed source exports returning HTTP 406 during API content negotiation.
   Successful downloads still require a complete ZIP archive; JSON responses

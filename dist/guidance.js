@@ -119,11 +119,11 @@ const TOPICS = {
     },
     projects: {
         ...resource('projects', 'Manage projects and explicit local project links.'),
-        usage: [...resource('projects', '').usage, 'blinkhost projects export PROJECT_UUID --output ./project.zip'],
+        usage: [...resource('projects', '').usage, 'blinkhost projects export PROJECT_UUID [--source-only] --output ./project.zip'],
         details: [...resource('projects', '').details,
             'projects link/unlink manage only the local pointer. projects pull/push synchronize through a configured source connection.',
             'projects export downloads a source ZIP through the existing project export service. Requires projects:read and an owner, admin or developer role. A GitHub connection is not required.',
-            'Export requires a supported frontend configuration; this path does not yet export backend-only projects. A built backend module alone does not establish export support. Known configuration or credential-screening failures include safe next steps and a request ID, without printing raw server details. No source or configuration is changed by export.',
+            'Default portable export requires a supported frontend configuration. Use --source-only for backend-only projects or to preserve source without generating or validating build configuration, READMEs, database schemas or lockfiles. Existing files and validated project assets are retained; a connected repository uses its saved base with workspace changes, not a fresh remote fetch. The server must confirm source-only mode. Both modes enforce the same authorization and screening; neither changes stored source.',
             'The CLI accepts archives up to 32 MiB, never overwrites files, follows no download redirects, and does not extract or run source. Use a new .zip path in an existing directory without symbolic links. The file is private to your account where POSIX permissions apply.',
             'This exports source and portable configuration, not database rows, runtime secret values, deployed artifacts or complete Git history. Review before sharing: secret screening is not a guarantee. Recreate bindings and resources separately and validate runtime compatibility at the destination. ai export is a separate task-history snapshot.'],
     },
