@@ -112,6 +112,93 @@ test('project export saves a private complete ZIP and never overwrites customer 
         await rm(root, { recursive: true, force: true });
     }
 });
+test('export errors give allowlisted next steps without exposing server text', async () => {
+    const original = globalThis.fetch;
+    let calls = 0;
+    try {
+        for (const [code, status, expected] of [
+            ['project_template_unsupported', 400, /Backend-only/],
+            ['committed_secret_detected', 409, /credential screening/],
+            ['html_package_invalid', 409, /package.json/],
+            ['dependency_lockfile_missing', 409, /package-lock.json/],
+        ]) {
+            const body = JSON.stringify({ code, detail: 'private-source-and-credentials\u001b[31m', path: 'private-path' });
+            const bytes = Buffer.from(body);
+            let offset = 0;
+            globalThis.fetch = async () => {
+                calls++;
+                return new Response(new ReadableStream({
+                    pull(controller) {
+                        if (offset === bytes.length) {
+                            controller.close();
+                            return;
+                        }
+                        controller.enqueue(bytes.subarray(offset, offset + 7));
+                        offset = Math.min(bytes.length, offset + 7);
+                    },
+                }), { status, headers: { 'content-type': 'Application/JSON; charset=utf-8', 'content-length': String(bytes.length) } });
+            };
+            await assert.rejects(client().projectArchive(project), (error) => {
+                assert.equal(error.code, `api_${status}`);
+                assert.equal(error.exitCode, status === 409 ? 9 : 8);
+                assert.match(error.message, expected);
+                assert.match(error.details[0], /^Request ID: [a-f0-9-]{36}$/);
+                assert.equal(error.details[1], `Export reason: ${code}`);
+                assert.doesNotMatch(JSON.stringify(error) + error.message, /private-|\u001b/);
+                return true;
+            });
+        }
+        assert.equal(calls, 4); // No retries, extra requests or mutation.
+        assert.match(documentationTopic('projects').details.join(' '), /backend-only/);
+    }
+    finally {
+        globalThis.fetch = original;
+    }
+});
+test('untrusted export errors fall back to status without interpreting arbitrary messages', async () => {
+    const original = globalThis.fetch;
+    const known = JSON.stringify({ code: 'project_template_unsupported', detail: 'private-value' });
+    try {
+        for (const value of [
+            Response.json({ code: 'private-code', detail: 'private-value' }, { status: 400 }),
+            Response.json({ code: 'constructor' }, { status: 400 }),
+            Response.json({ code: ['project_template_unsupported'] }, { status: 400 }),
+            Response.json([{ code: 'project_template_unsupported' }], { status: 400 }),
+            Response.json(null, { status: 400 }),
+            new Response('{private-invalid-json', { status: 400, headers: { 'content-type': 'application/json' } }),
+            new Response(known, { status: 400, headers: { 'content-type': 'text/html' } }),
+            new Response(known, { status: 400, headers: { 'content-type': 'application/json', 'content-length': '8193' } }),
+            new Response(known, { status: 400, headers: { 'content-type': 'application/json', 'content-length': '-1' } }),
+            new Response(known, { status: 400, headers: { 'content-type': 'application/json', 'content-length': '1' } }),
+            ...[401, 403, 409, 500].map(status => new Response(known, { status, headers: { 'content-type': 'application/json' } })),
+        ]) {
+            globalThis.fetch = async () => value;
+            await assert.rejects(client().projectArchive(project), (error) => {
+                assert.equal(error.code, `api_${value.status}`);
+                assert.match(error.message, /Project export returned HTTP/);
+                assert.equal(error.details.length, 1);
+                assert.doesNotMatch(error.message + JSON.stringify(error.details), /private-|project_template_unsupported/);
+                return true;
+            });
+        }
+        let cancelled = false;
+        let pulls = 0;
+        globalThis.fetch = async () => new Response(new ReadableStream({
+            pull(controller) { pulls++; controller.enqueue(new Uint8Array(4096)); },
+            cancel() { cancelled = true; },
+        }), { status: 400, headers: { 'content-type': 'application/json' } });
+        await assert.rejects(client().projectArchive(project), { code: 'api_400' });
+        assert.equal(cancelled, true);
+        assert.ok(pulls <= 4);
+        globalThis.fetch = async () => new Response(new ReadableStream({
+            start(controller) { controller.error(new Error('private-transport-detail')); },
+        }), { status: 400, headers: { 'content-type': 'application/json' } });
+        await assert.rejects(client().projectArchive(project), (error) => error.code === 'api_400' && !error.message.includes('private-'));
+    }
+    finally {
+        globalThis.fetch = original;
+    }
+});
 test('project export rejects symlinks and leaves no file on failed downloads', async () => {
     const root = await mkdtemp(join(await realpath(tmpdir()), 'blinkhost-export-safety-'));
     const originalFetch = globalThis.fetch;

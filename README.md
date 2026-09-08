@@ -251,6 +251,12 @@ The CLI does not follow redirects, replace existing files, extract the ZIP or ru
 its contents. It returns a SHA-256 checksum and saves with private permissions
 where POSIX permissions apply.
 
+Export currently requires a supported frontend configuration. This export path
+does not yet support backend-only projects: a successful backend build alone is
+not enough. Known configuration and credential-screening errors include next
+steps and a request ID; raw server details are not printed. Export never repairs
+configuration, installs dependencies or changes source on your behalf.
+
 The archive is **not a database backup or a running deployment**. Database rows,
 runtime secrets, deployed artifacts and complete Git history are not included.
 Source is screened for possible credentials, but review it before sharing.
