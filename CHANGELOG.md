@@ -4,6 +4,11 @@ This file records customer-visible CLI changes. BlinkHost uses semantic versioni
 
 ## Unreleased — Idam staff preview
 
+- Fixed upload requests combining the default JSON content type with an explicit
+  multipart or binary content type, which could cause HTTP 415 errors. Custom
+  headers now replace defaults regardless of capitalization. Failed uploads are
+  still not retried automatically.
+
 - Sign-in now explains expired codes and how to request a new one. Authorization
   polling backs off when requested by the server and stops at expiry; uncertain
   token-delivery or network failures are not retried automatically. Sign-in

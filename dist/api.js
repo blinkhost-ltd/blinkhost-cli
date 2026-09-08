@@ -29,11 +29,15 @@ export async function publicRequest(apiOrigin, path, init = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
+        // Headers are case-insensitive. Object-spreading normalized caller headers
+        // into mixed-case defaults makes fetch combine Content-Type values.
+        const headers = new Headers({ Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': `BlinkHost-CLI/${VERSION}` });
+        new Headers(init.headers).forEach((value, name) => headers.set(name, value));
         const response = await fetch(new URL(path, `${apiOrigin}/`), {
             ...init,
             redirect: 'error',
             signal: controller.signal,
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': `BlinkHost-CLI/${VERSION}`, ...Object.fromEntries(new Headers(init.headers).entries()) },
+            headers,
         });
         return { response, data: await parseResponse(response) };
     }
