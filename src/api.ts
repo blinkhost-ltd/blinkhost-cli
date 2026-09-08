@@ -11,7 +11,7 @@ interface TokenResponse { access_token: string; refresh_token: string; token_typ
 // Only locally written guidance may reach terminal output. Never echo server
 // details, filenames or arbitrary codes from a source-export error response.
 const EXPORT_GUIDANCE: Readonly<Record<string, { status: number; message: string }>> = {
-  project_template_unsupported: { status: 400, message: 'Source export needs a supported frontend configuration. Backend-only projects are not supported by this export path yet. Check the project configuration in BlinkHost; this command has not changed your source.' },
+  project_template_unsupported: { status: 400, message: 'Portable export needs a supported frontend configuration. Backend-only projects can use projects export PROJECT_UUID --source-only --output ./source.zip to download source without generating or validating build configuration. This command has not changed your source.' },
   committed_secret_detected: { status: 409, message: 'Source export was blocked by credential screening. Review possible credentials in your project before sharing it, and rotate any exposed values. Do not paste credentials into a support request.' },
   html_package_invalid: { status: 409, message: 'Source export could not read the HTML project package configuration. Check that package.json is valid JSON and its scripts field is an object.' },
   dependency_lockfile_missing: { status: 409, message: 'Source export needs package-lock.json for this HTML project. Review the project dependencies, then use its normal dependency-install workflow to create the lockfile. This command has not installed or run anything.' },
@@ -134,17 +134,18 @@ export class ApiClient {
     return new ApiClient(profileName, profile, accessToken, true);
   }
 
-  async projectArchive(projectId: string): Promise<Buffer> {
+  async projectArchive(projectId: string, mode: 'portable' | 'source' = 'portable'): Promise<Buffer> {
     if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(projectId)) {
       throw new CliError('A valid project UUID is required.', EXIT.usage, 'invalid_project_id');
     }
+    if (mode !== 'portable' && mode !== 'source') throw new CliError('Choose portable or source export mode.', EXIT.usage, 'export_mode_invalid');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     const requestId = randomUUID();
     const limit = 32 * 1024 * 1024;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
-      const response = await fetch(new URL(`/api/source-control/connections/project-export/?project=${projectId}`, this.profile.apiOrigin), {
+      const response = await fetch(new URL(`/api/source-control/connections/project-export/?project=${projectId}${mode === 'source' ? '&mode=source' : ''}`, this.profile.apiOrigin), {
         method: 'GET', redirect: 'error', signal: controller.signal,
         // Allow the API's JSON error renderer during content negotiation.
         // Successful responses must still pass ZIP-only validation below.
@@ -156,6 +157,12 @@ export class ApiClient {
         throw new CliError(guidance?.message || `Project export returned HTTP ${response.status}. Check your access and the project's export status in BlinkHost.`,
           [401, 403].includes(response.status) ? EXIT.auth : response.status === 409 ? EXIT.conflict : EXIT.remote,
           `api_${response.status}`, [`Request ID: ${requestId}`, ...(guidance ? [`Export reason: ${guidance.code}`] : [])]);
+      }
+      // An older API may ignore an unknown query parameter. Never silently
+      // save generated configuration when an exact source export was requested.
+      if (mode === 'source' && response.headers.get('x-blinkhost-export-mode') !== 'source') {
+        await response.body?.cancel().catch(() => undefined);
+        throw new CliError('The server did not confirm a source-only export. No archive was saved. Check server support before trying again.', EXIT.validation, 'export_mode_unconfirmed');
       }
       const length = response.headers.get('content-length');
       if (response.status !== 200 || response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/zip'

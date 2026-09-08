@@ -251,10 +251,22 @@ The CLI does not follow redirects, replace existing files, extract the ZIP or ru
 its contents. It returns a SHA-256 checksum and saves with private permissions
 where POSIX permissions apply.
 
-Export currently requires a supported frontend configuration. This export path
-does not yet support backend-only projects: a successful backend build alone is
-not enough. Known configuration and credential-screening errors include next
-steps and a request ID; raw server details are not printed. Export never repairs
+The default portable export requires a supported frontend configuration. For
+backend-only projects, or to download source without generating build files, use:
+
+```bash
+blinkhost projects export PROJECT_UUID --source-only --output ./source.zip --json
+```
+
+Source-only mode preserves workspace files and validated project assets, including
+any existing configuration. It does not generate or validate build configuration,
+README files, database schemas or lockfiles. A connected repository's saved base
+is overlaid with the workspace; files outside the application root are preserved.
+It is not a fresh fetch of the remote branch. The server must explicitly confirm
+source-only mode, so an older server cannot silently return generated files.
+The same authorization, credential screening and size limits apply in both modes.
+Known configuration and credential-screening errors include next steps and a
+request ID; raw server details are not printed. Export never repairs your stored
 configuration, installs dependencies or changes source on your behalf.
 
 The archive is **not a database backup or a running deployment**. Database rows,

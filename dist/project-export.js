@@ -28,15 +28,27 @@ export async function exportProject(input, profile) {
     if (!projectId || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(projectId)) {
         throw new CliError('Use projects export PROJECT_UUID --output ./project.zip.', EXIT.usage, 'invalid_project_id');
     }
-    if (args.length !== 2 || args[0] !== '--output' || !args[1] || args[1].startsWith('--')) {
+    let output;
+    let sourceOnly = false;
+    while (args.length) {
+        const option = args.shift();
+        if (option === '--source-only' && !sourceOnly)
+            sourceOnly = true;
+        else if (option === '--output' && output === undefined && args[0] && !args[0].startsWith('--'))
+            output = args.shift();
+        else
+            throw new CliError('Use projects export PROJECT_UUID [--source-only] --output ./project.zip. Do not repeat options.', EXIT.usage, 'export_output_required');
+    }
+    if (!output) {
         throw new CliError('Choose a new ZIP filename with --output. Existing files are never replaced.', EXIT.usage, 'export_output_required');
     }
-    const destination = resolveLocalPath(args[1]);
+    const destination = resolveLocalPath(output);
     if (!basename(destination).toLowerCase().endsWith('.zip'))
         throw new CliError('The export filename must end in .zip.', EXIT.usage, 'export_output_invalid');
     await checkDestination(destination);
     const client = await ApiClient.create(profile);
-    const body = await client.projectArchive(projectId);
+    const mode = sourceOnly ? 'source' : 'portable';
+    const body = await client.projectArchive(projectId, mode);
     await checkDestination(destination);
     const temporary = join(dirname(destination), `.blinkhost-export-${randomUUID()}.tmp`);
     const file = await open(temporary, 'wx', 0o600);
@@ -60,6 +72,8 @@ export async function exportProject(input, profile) {
     return { project_id: projectId, path: destination, size_bytes: body.length,
         sha256: createHash('sha256').update(body).digest('hex'), format: 'zip', extracted: false,
         includes_database_backup: false, includes_runtime_secrets: false,
-        next_steps: ['Review the archive before extracting or sharing it.', 'Configure resources and secrets separately in the destination environment.'] };
+        export_mode: mode,
+        next_steps: [...(sourceOnly ? ['Source only: build configuration was not generated or validated.'] : []),
+            'Review the archive before extracting or sharing it.', 'Configure resources and secrets separately in the destination environment.'] };
 }
 //# sourceMappingURL=project-export.js.map
