@@ -1,6 +1,7 @@
 export declare function login(options: {
     profile?: string;
     apiOrigin?: string;
+    scopes?: string[];
     openBrowser?: boolean;
     progress?: (line: string) => void;
 }): Promise<unknown>;

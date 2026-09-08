@@ -8,7 +8,7 @@ export interface DocumentationTopic {
     related: string[];
     url: string;
 }
-export declare const TOP_LEVEL_COMMANDS: ("plugins" | "profile" | "modules" | "dev" | "databases" | "secrets" | "manifest" | "projects" | "repositories" | "connections" | "previews" | "builds" | "deployments" | "bindings" | "assets" | "organizations" | "templates" | "approvals" | "handoffs" | "policies" | "workloads" | "create" | "update" | "quickstart" | "init" | "doctor" | "auth" | "validate" | "test" | "ci" | "functions" | "logs" | "support" | "metrics" | "analytics" | "completion" | "api" | "docs")[];
+export declare const TOP_LEVEL_COMMANDS: ("plugins" | "profile" | "modules" | "dev" | "databases" | "secrets" | "manifest" | "projects" | "repositories" | "connections" | "previews" | "builds" | "deployments" | "bindings" | "assets" | "organizations" | "templates" | "approvals" | "handoffs" | "policies" | "workloads" | "create" | "update" | "ai" | "auth" | "quickstart" | "init" | "doctor" | "validate" | "test" | "ci" | "functions" | "logs" | "support" | "metrics" | "analytics" | "completion" | "api" | "docs")[];
 export declare function documentationIndex(): {
     schema: string;
     cli_version: string;

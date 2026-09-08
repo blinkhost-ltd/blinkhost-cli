@@ -27,7 +27,9 @@ export async function credentialStoreStatus(): Promise<CredentialStoreStatus> {
     const available = await executableAvailable('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]']);
     return { available, provider: 'windows-password-vault', remediation: available ? null : 'Use Windows with PowerShell and Password Vault available.' };
   }
-  const available = await executableAvailable('secret-tool', ['--version']);
+  // Global --version/--help are unsupported by libsecret's secret-tool (exit 2).
+  // Subcommand help checks the binary without querying or unlocking any secrets.
+  const available = await executableAvailable('secret-tool', ['search', '--help']);
   return { available, provider: 'linux-secret-service', remediation: available ? null : 'Install libsecret tools and start an unlocked Secret Service session, or use a short-lived workload identity in headless automation.' };
 }
 

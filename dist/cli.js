@@ -10,25 +10,25 @@ import { readProjectManifest, resolveLocalPath, validateProject, writeManifest, 
 import { createScaffold } from './templates.js';
 import { ApiClient } from './api.js';
 import { login, logout } from './auth.js';
+import { runAssistant } from './assistant.js';
+import { exportProject } from './project-export.js';
 import { activeProfile, readConfig, validateProfileName, writeConfig } from './config.js';
 import { openPreview, projectStatus, rawApi, readProjectLink, runFunctions, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
 import { checkForUpdate, ciCheck, completion, maybeUpdateNotice, observability, releaseNotes, runDev, runPlugins, supportBundle, testProject } from './workflows.js';
 import { documentationIndex, documentationTopic, quickstart, renderTopHelp, renderTopic, searchDocumentation, TOP_LEVEL_COMMANDS } from './guidance.js';
 import { VERSION, supportedNodeVersion } from './version.js';
+import { terminalJson, terminalText } from './terminal.js';
 let quietOutput = false;
 let verboseOutput = false;
-function terminalText(value) {
-    return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '');
-}
 function emit(output, json) {
     if (json)
-        process.stdout.write(`${JSON.stringify(output)}\n`);
+        process.stdout.write(`${terminalJson(JSON.stringify(output))}\n`);
     else {
         if (quietOutput)
             return;
         process.stdout.write(`${terminalText(output.message)}\n`);
         if (output.data !== undefined && output.data !== null) {
-            process.stdout.write(`${terminalText(JSON.stringify(output.data, null, 2))}\n`);
+            process.stdout.write(`${terminalJson(JSON.stringify(output.data, null, 2))}\n`);
         }
         for (const warning of output.warnings ?? [])
             process.stderr.write(`Warning: ${terminalText(warning)}\n`);
@@ -182,7 +182,7 @@ async function commandManifest(args, json) {
     if (json)
         emit({ ok: true, command: 'manifest', message: 'Manifest parsed.', data: manifest }, true);
     else
-        process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+        process.stdout.write(`${terminalJson(JSON.stringify(manifest, null, 2))}\n`);
 }
 async function commandDoctor(args, json) {
     const path = args.shift();
@@ -315,15 +315,20 @@ export async function main(argv = process.argv.slice(2)) {
             const data = await testProject(args, json);
             emit({ ok: true, command, message: 'Project checks passed.', data }, json);
         }
+        else if (command === 'ai') {
+            const result = await runAssistant(args, profile);
+            emit({ ok: true, command: 'ai', ...result }, json);
+        }
         else if (command === 'auth') {
             const action = args.shift() || 'status';
             if (action === 'login') {
                 const apiOrigin = takeOption(args, '--api-origin');
                 const noBrowser = takeFlag(args, '--no-browser');
+                const scopes = takeRepeatedOption(args, '--scope');
                 assertNoUnknown(args);
                 if (nonInteractive)
                     throw new CliError('Interactive account authorization is disabled. Use an approved workload identity in automation.', EXIT.auth, 'interaction_required');
-                const data = await login({ ...(profile ? { profile } : {}), ...(apiOrigin ? { apiOrigin } : {}), openBrowser: !noBrowser, ...(!json && !quietOutput ? { progress: (line) => { process.stderr.write(`${terminalText(line)}\n`); } } : {}) });
+                const data = await login({ ...(profile ? { profile } : {}), ...(apiOrigin ? { apiOrigin } : {}), ...(scopes.length ? { scopes } : {}), openBrowser: !noBrowser, ...(!json && !quietOutput ? { progress: (line) => { process.stderr.write(`${terminalText(line)}\n`); } } : {}) });
                 emit({ ok: true, command: 'auth login', message: 'This device is connected to BlinkHost.', data }, json);
             }
             else if (action === 'logout') {
@@ -404,6 +409,11 @@ export async function main(argv = process.argv.slice(2)) {
             assertNoUnknown(args);
             const data = await projectStatus(profile);
             emit({ ok: true, command: 'projects status', message: 'Project and source connection status loaded.', data }, json);
+        }
+        else if (command === 'projects' && args[0] === 'export') {
+            args.shift();
+            const data = await exportProject(args, profile);
+            emit({ ok: true, command: 'projects export', message: 'Project source archive saved. This is not a database backup or a portable running deployment.', data }, json);
         }
         else if (command === 'projects' && (args[0] === 'pull' || args[0] === 'push')) {
             const action = args.shift();
@@ -500,7 +510,7 @@ export async function main(argv = process.argv.slice(2)) {
     catch (error) {
         const failure = error instanceof CliError ? error : new CliError(error instanceof Error ? error.message : String(error), EXIT.internal, 'internal_error');
         if (json)
-            process.stdout.write(`${JSON.stringify({ ok: false, command: command ?? '', error: { code: failure.code, message: failure.message, details: failure.details } })}\n`);
+            process.stdout.write(`${terminalJson(JSON.stringify({ ok: false, command: command ?? '', error: { code: failure.code, message: failure.message, details: failure.details } }))}\n`);
         else {
             process.stderr.write(`Error: ${terminalText(failure.message)}\n`);
             for (const detail of failure.details)
