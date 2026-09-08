@@ -4,6 +4,11 @@ This file records customer-visible CLI changes. BlinkHost uses semantic versioni
 
 ## Unreleased — Idam staff preview
 
+- Added safe, actionable source-export guidance for unsupported frontend
+  configurations, HTML package/lockfile issues and credential-screening blocks.
+  Error bodies are bounded and never printed; unknown failures retain their HTTP
+  status and request ID. Offline help documents the backend-only export limit.
+
 - Fixed source exports returning HTTP 406 during API content negotiation.
   Successful downloads still require a complete ZIP archive; JSON responses
   cannot be saved as source exports.

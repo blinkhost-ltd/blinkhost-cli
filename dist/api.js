@@ -4,6 +4,56 @@ import { deleteRefreshCredential, getRefreshCredential, setRefreshCredential } f
 import { CliError, EXIT } from './errors.js';
 import { VERSION } from './version.js';
 const REQUEST_TIMEOUT_MS = 30_000;
+// Only locally written guidance may reach terminal output. Never echo server
+// details, filenames or arbitrary codes from a source-export error response.
+const EXPORT_GUIDANCE = {
+    project_template_unsupported: { status: 400, message: 'Source export needs a supported frontend configuration. Backend-only projects are not supported by this export path yet. Check the project configuration in BlinkHost; this command has not changed your source.' },
+    committed_secret_detected: { status: 409, message: 'Source export was blocked by credential screening. Review possible credentials in your project before sharing it, and rotate any exposed values. Do not paste credentials into a support request.' },
+    html_package_invalid: { status: 409, message: 'Source export could not read the HTML project package configuration. Check that package.json is valid JSON and its scripts field is an object.' },
+    dependency_lockfile_missing: { status: 409, message: 'Source export needs package-lock.json for this HTML project. Review the project dependencies, then use its normal dependency-install workflow to create the lockfile. This command has not installed or run anything.' },
+};
+async function exportErrorGuidance(response) {
+    const limit = 8192;
+    if (![400, 409].includes(response.status)
+        || response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/json'
+        || !response.body)
+        return;
+    const length = response.headers.get('content-length');
+    if (length !== null && (!/^\d+$/.test(length) || Number(length) > limit))
+        return;
+    const reader = response.body.getReader();
+    try {
+        let size = 0;
+        const chunks = [];
+        while (true) {
+            const chunk = await reader.read();
+            if (chunk.done)
+                break;
+            size += chunk.value.byteLength;
+            if (size > limit)
+                return;
+            chunks.push(Buffer.from(chunk.value));
+        }
+        if (length !== null && Number(length) !== size)
+            return;
+        const payload = JSON.parse(Buffer.concat(chunks, size).toString('utf8'));
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+            return;
+        const code = payload.code;
+        if (typeof code !== 'string' || !Object.hasOwn(EXPORT_GUIDANCE, code))
+            return;
+        const guidance = EXPORT_GUIDANCE[code];
+        if (guidance.status === response.status)
+            return { code, message: guidance.message };
+    }
+    catch {
+        // Malformed, incomplete and failed error bodies retain the generic HTTP error.
+    }
+    finally {
+        await reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+    }
+}
 function messageFrom(payload, fallback) {
     if (payload && typeof payload === 'object') {
         const candidate = payload;
@@ -125,8 +175,8 @@ export class ApiClient {
                     'X-Request-ID': requestId, 'User-Agent': `BlinkHost-CLI/${VERSION}` },
             });
             if (!response.ok) {
-                // Do not print an untrusted response body, which may contain source or credentials.
-                throw new CliError(`Project export returned HTTP ${response.status}. Check your access and the project's export status in BlinkHost.`, [401, 403].includes(response.status) ? EXIT.auth : response.status === 409 ? EXIT.conflict : EXIT.remote, `api_${response.status}`, [`Request ID: ${requestId}`]);
+                const guidance = await exportErrorGuidance(response);
+                throw new CliError(guidance?.message || `Project export returned HTTP ${response.status}. Check your access and the project's export status in BlinkHost.`, [401, 403].includes(response.status) ? EXIT.auth : response.status === 409 ? EXIT.conflict : EXIT.remote, `api_${response.status}`, [`Request ID: ${requestId}`, ...(guidance ? [`Export reason: ${guidance.code}`] : [])]);
             }
             const length = response.headers.get('content-length');
             if (response.status !== 200 || response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/zip'

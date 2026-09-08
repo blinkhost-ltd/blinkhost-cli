@@ -137,6 +137,7 @@ const TOPICS: Record<string, DocumentationTopic> = {
     details: [...resource('projects', '').details,
       'projects link/unlink manage only the local pointer. projects pull/push synchronize through a configured source connection.',
       'projects export downloads a source ZIP through the existing project export service. Requires projects:read and an owner, admin or developer role. A GitHub connection is not required.',
+      'Export requires a supported frontend configuration; this path does not yet export backend-only projects. A built backend module alone does not establish export support. Known configuration or credential-screening failures include safe next steps and a request ID, without printing raw server details. No source or configuration is changed by export.',
       'The CLI accepts archives up to 32 MiB, never overwrites files, follows no download redirects, and does not extract or run source. Use a new .zip path in an existing directory without symbolic links. The file is private to your account where POSIX permissions apply.',
       'This exports source and portable configuration, not database rows, runtime secret values, deployed artifacts or complete Git history. Review before sharing: secret screening is not a guarantee. Recreate bindings and resources separately and validate runtime compatibility at the destination. ai export is a separate task-history snapshot.'],
   },
