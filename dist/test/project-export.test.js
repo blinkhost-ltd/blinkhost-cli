@@ -24,6 +24,9 @@ test('archive download uses the scoped canonical endpoint without redirects or r
         assert.equal(init?.redirect, 'error');
         assert.equal(init?.method, 'GET');
         assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer synthetic-test-token');
+        // The API negotiates its JSON renderer before the action returns a ZIP.
+        // Advertise both, but continue to validate successful downloads as ZIP only.
+        assert.equal(new Headers(init?.headers).get('Accept'), 'application/zip, application/json');
         return response();
     };
     try {
@@ -43,11 +46,12 @@ test('archive download uses the scoped canonical endpoint without redirects or r
 test('archive download refuses errors, partial responses, invalid types, sizes and truncated source', async () => {
     const original = globalThis.fetch;
     try {
-        for (const status of [401, 403, 409, 429, 500]) {
+        for (const status of [401, 403, 406, 409, 429, 500]) {
             globalThis.fetch = async () => new Response('private-response-body', { status });
             await assert.rejects(client().projectArchive(project), (error) => error.code === `api_${status}` && !error.message.includes('private-response-body'));
         }
         for (const value of [new Response(zip, { status: 206, headers: { 'content-type': 'application/zip' } }),
+            Response.json({ detail: 'not an archive' }),
             new Response(zip, { headers: { 'content-type': 'text/html' } }),
             new Response(zip, { headers: { 'content-type': 'application/zip', 'content-length': String(33 * 1024 * 1024) } }),
             new Response(zip, { headers: { 'content-type': 'application/zip', 'content-length': '-1' } }),

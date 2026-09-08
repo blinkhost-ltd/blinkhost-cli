@@ -4,6 +4,10 @@ This file records customer-visible CLI changes. BlinkHost uses semantic versioni
 
 ## Unreleased — Idam staff preview
 
+- Fixed source exports returning HTTP 406 during API content negotiation.
+  Successful downloads still require a complete ZIP archive; JSON responses
+  cannot be saved as source exports.
+
 - Fixed upload requests combining the default JSON content type with an explicit
   multipart or binary content type, which could cause HTTP 415 errors. Custom
   headers now replace defaults regardless of capitalization. Failed uploads are
