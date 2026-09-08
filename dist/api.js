@@ -103,6 +103,69 @@ export class ApiClient {
     static fromAccessToken(profileName, profile, accessToken) {
         return new ApiClient(profileName, profile, accessToken, true);
     }
+    async projectArchive(projectId) {
+        if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(projectId)) {
+            throw new CliError('A valid project UUID is required.', EXIT.usage, 'invalid_project_id');
+        }
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        const requestId = randomUUID();
+        const limit = 32 * 1024 * 1024;
+        let reader;
+        try {
+            const response = await fetch(new URL(`/api/source-control/connections/project-export/?project=${projectId}`, this.profile.apiOrigin), {
+                method: 'GET', redirect: 'error', signal: controller.signal,
+                headers: { Accept: 'application/zip', Authorization: `Bearer ${this.accessToken}`,
+                    'X-Request-ID': requestId, 'User-Agent': `BlinkHost-CLI/${VERSION}` },
+            });
+            if (!response.ok) {
+                // Do not print an untrusted response body, which may contain source or credentials.
+                throw new CliError(`Project export returned HTTP ${response.status}. Check your access and the project's export status in BlinkHost.`, [401, 403].includes(response.status) ? EXIT.auth : response.status === 409 ? EXIT.conflict : EXIT.remote, `api_${response.status}`, [`Request ID: ${requestId}`]);
+            }
+            const length = response.headers.get('content-length');
+            if (response.status !== 200 || response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !== 'application/zip'
+                || (length !== null && (!/^\d+$/.test(length) || Number(length) > limit)) || !response.body) {
+                throw new CliError('The export did not return a supported ZIP archive (maximum 32 MiB).', EXIT.validation, 'invalid_project_archive');
+            }
+            reader = response.body.getReader();
+            const chunks = [];
+            let size = 0;
+            while (true) {
+                const chunk = await reader.read();
+                if (chunk.done)
+                    break;
+                size += chunk.value.byteLength;
+                if (size > limit)
+                    throw new CliError('The project ZIP exceeds the CLI download limit of 32 MiB.', EXIT.validation, 'archive_too_large');
+                chunks.push(Buffer.from(chunk.value));
+            }
+            const body = Buffer.concat(chunks, size);
+            // The canonical exporter writes a single-disk ZIP without an archive
+            // comment. Check its closing directory record too, not just the prefix.
+            const end = size - 22;
+            if ((length !== null && Number(length) !== size) || size < 22 || !['504b0304', '504b0506'].includes(body.subarray(0, 4).toString('hex'))
+                || body.subarray(end, end + 4).toString('hex') !== '504b0506'
+                || body.readUInt16LE(end + 4) !== 0 || body.readUInt16LE(end + 6) !== 0
+                || body.readUInt16LE(end + 8) !== body.readUInt16LE(end + 10)
+                || body.readUInt16LE(end + 20) !== 0
+                || body.readUInt32LE(end + 12) + body.readUInt32LE(end + 16) !== end) {
+                throw new CliError('The export response is not a ZIP archive.', EXIT.validation, 'invalid_project_archive');
+            }
+            return body;
+        }
+        catch (error) {
+            if (error instanceof CliError)
+                throw error;
+            const timedOut = controller.signal.aborted;
+            throw new CliError(timedOut ? 'The project export timed out. No archive was saved.' : 'The project export could not be downloaded. No archive was saved.', EXIT.network, timedOut ? 'request_timeout' : 'network_error');
+        }
+        finally {
+            controller.abort();
+            if (reader)
+                await reader.cancel().catch(() => undefined);
+            clearTimeout(timeout);
+        }
+    }
     async request(path, init = {}) {
         const headers = new Headers(init.headers);
         headers.set('Authorization', `Bearer ${this.accessToken}`);

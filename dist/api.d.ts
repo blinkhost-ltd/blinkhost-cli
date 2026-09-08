@@ -11,6 +11,7 @@ export declare class ApiClient {
     private constructor();
     static create(profileName?: string): Promise<ApiClient>;
     static fromAccessToken(profileName: string, profile: Profile, accessToken: string): ApiClient;
+    projectArchive(projectId: string): Promise<Buffer>;
     request(path: string, init?: RequestInit): Promise<unknown>;
     rememberIdentity(identity: {
         id?: number;

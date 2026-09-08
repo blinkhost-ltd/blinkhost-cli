@@ -13,6 +13,13 @@ test('offline documentation is versioned, searchable, and command scoped', () =>
     assert.equal(documentationTopic('functions')?.name, 'functions');
     assert.ok(searchDocumentation('credential').some((topic) => topic.name === 'auth' || topic.name === 'security'));
 });
+test('workflow help distinguishes approval permission from plan editing', () => {
+    const details = documentationTopic('ai')?.details.join(' ') ?? '';
+    assert.match(details, /workflow-status needs ai:read/);
+    assert.match(details, /plan, revise and cancel need ai:execute/);
+    assert.match(details, /workflow-approve needs ai:approve/);
+    assert.doesNotMatch(details, /plan, revise, approve and cancel need ai:execute/);
+});
 test('quickstart is local, read-only, and reports safety boundaries', async () => {
     const root = await mkdtemp(join(tmpdir(), 'blinkhost-quickstart-'));
     const before = await readdir(root);
