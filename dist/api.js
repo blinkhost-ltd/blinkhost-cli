@@ -119,7 +119,9 @@ export class ApiClient {
         try {
             const response = await fetch(new URL(`/api/source-control/connections/project-export/?project=${projectId}`, this.profile.apiOrigin), {
                 method: 'GET', redirect: 'error', signal: controller.signal,
-                headers: { Accept: 'application/zip', Authorization: `Bearer ${this.accessToken}`,
+                // Allow the API's JSON error renderer during content negotiation.
+                // Successful responses must still pass ZIP-only validation below.
+                headers: { Accept: 'application/zip, application/json', Authorization: `Bearer ${this.accessToken}`,
                     'X-Request-ID': requestId, 'User-Agent': `BlinkHost-CLI/${VERSION}` },
             });
             if (!response.ok) {
