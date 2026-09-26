@@ -2,6 +2,17 @@
 
 This file records customer-visible CLI changes. BlinkHost uses semantic versioning for the CLI, while security and migration impact are classified separately. A patch may therefore require prompt action, and a major release may coexist with an earlier supported line during its documented migration window.
 
+## 2.5.1 — Saved-session concurrency
+
+Commands sharing a saved profile now serialize credential refresh and sign-out.
+This prevents concurrent CLI processes from reusing a rotated refresh credential
+and revoking the session. Sign-in verifies the new session using its original
+access token, and temporary refresh errors preserve the saved credential.
+
+If a command exits unexpectedly while holding the sign-in lock, the CLI reports
+the lock path. Confirm that no command for that profile is running before
+removing that file. Idam remains limited preview; workspace policy is unchanged.
+
 ## 2.5.0 — Idam limited preview
 
 This release adds Idam commands for eligible accounts on an enabled control plane.

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { activeProfile, writeConfig } from './config.js';
 import { deleteRefreshCredential, getRefreshCredential, setRefreshCredential } from './credentials.js';
+import { withCredentialLock } from './credential-lock.js';
+import { validateDeviceTokens } from './device-flow.js';
 import { CliError, EXIT } from './errors.js';
 import { VERSION } from './version.js';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -140,19 +142,50 @@ export class ApiClient {
                 throw new CliError(payload.detail || 'BlinkHost rejected this workload identity.', EXIT.auth, 'ci_exchange_failed');
             return new ApiClient(selected.name, selected.profile, payload.access_token, true);
         }
+        if (process.env.BLINKHOST_REFRESH_TOKEN)
+            return ApiClient.refresh(selected);
+        return withCredentialLock(selected.name, () => ApiClient.refresh(selected));
+    }
+    // Caller holds the profile lock for saved credentials. Explicit environment
+    // credentials remain caller-managed and are never persisted or removed.
+    static async refresh(selected) {
         const refresh = process.env.BLINKHOST_REFRESH_TOKEN || await getRefreshCredential(selected.name);
         if (!refresh)
             throw new CliError('Sign in with `blinkhost auth login` or provide BLINKHOST_ACCESS_TOKEN for CI.', EXIT.auth, 'not_authenticated');
         const result = await publicRequest(selected.profile.apiOrigin, '/api/cli/v2/token/refresh/', { method: 'POST', body: JSON.stringify({ refresh_token: refresh, client_version: VERSION }) });
         if (!result.response.ok) {
-            if (!process.env.BLINKHOST_REFRESH_TOKEN)
-                await deleteRefreshCredential(selected.name);
-            throw new CliError(messageFrom(result.data, 'Your CLI session has expired. Sign in again.'), EXIT.auth, 'session_expired');
+            if (result.response.status === 401) {
+                if (!process.env.BLINKHOST_REFRESH_TOKEN)
+                    await deleteRefreshCredential(selected.name);
+                throw new CliError(messageFrom(result.data, 'Your CLI session has expired. Sign in again.'), EXIT.auth, 'session_expired');
+            }
+            throw new CliError('BlinkHost could not refresh this session. The saved credential was preserved.', EXIT.network, 'session_refresh_failed');
         }
-        const tokens = result.data;
+        const tokens = validateDeviceTokens(result.data);
         if (!process.env.BLINKHOST_REFRESH_TOKEN)
             await setRefreshCredential(selected.name, tokens.refresh_token);
         return new ApiClient(selected.name, selected.profile, tokens.access_token, Boolean(process.env.BLINKHOST_REFRESH_TOKEN));
+    }
+    static async logout(profileName) {
+        const selected = await activeProfile(profileName);
+        if (process.env.BLINKHOST_ACCESS_TOKEN || process.env.BLINKHOST_REFRESH_TOKEN
+            || (process.env.ACTIONS_ID_TOKEN_REQUEST_URL && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN)) {
+            const client = await ApiClient.create(selected.name);
+            await client.request('/api/cli/v2/sessions/current/', { method: 'DELETE' });
+            return { profile: selected.name };
+        }
+        return withCredentialLock(selected.name, async () => {
+            try {
+                const client = await ApiClient.refresh(selected);
+                await client.request('/api/cli/v2/sessions/current/', { method: 'DELETE' });
+            }
+            catch (error) {
+                if (!(error instanceof CliError) || error.code !== 'session_expired')
+                    throw error;
+            }
+            await deleteRefreshCredential(selected.name);
+            return { profile: selected.name };
+        });
     }
     static fromAccessToken(profileName, profile, accessToken) {
         return new ApiClient(profileName, profile, accessToken, true);

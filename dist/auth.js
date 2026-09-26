@@ -2,7 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import { spawn } from 'node:child_process';
 import { activeProfile, validateApiOrigin, validateProfileName, writeConfig } from './config.js';
-import { credentialStoreStatus, deleteRefreshCredential, setRefreshCredential } from './credentials.js';
+import { credentialStoreStatus, setRefreshCredential } from './credentials.js';
+import { withCredentialLock } from './credential-lock.js';
 import { ApiClient, publicRequest } from './api.js';
 import { CliError, EXIT } from './errors.js';
 import { VERSION } from './version.js';
@@ -43,26 +44,21 @@ export async function login(options) {
     if (options.openBrowser !== false)
         openBrowser(device.verification_uri_complete);
     const tokens = validateDeviceTokens(await pollDeviceAuthorization(apiOrigin, device, verifier));
-    await setRefreshCredential(profileName, tokens.refresh_token);
-    selected.config.profiles[profileName] = { apiOrigin };
-    selected.config.activeProfile = profileName;
-    await writeConfig(selected.config);
-    const client = await ApiClient.create(profileName);
-    const capabilities = await client.request('/api/cli/v2/capabilities/');
-    await client.rememberIdentity(capabilities.actor || {});
-    return { profile: profileName, api_origin: apiOrigin, account: capabilities.actor, permissions: capabilities.features };
+    return withCredentialLock(profileName, async () => {
+        await setRefreshCredential(profileName, tokens.refresh_token);
+        selected.config.profiles[profileName] = { apiOrigin };
+        selected.config.activeProfile = profileName;
+        await writeConfig(selected.config);
+        const client = ApiClient.fromAccessToken(profileName, { apiOrigin }, tokens.access_token);
+        const capabilities = await client.request('/api/cli/v2/capabilities/');
+        selected.config.profiles[profileName] = { apiOrigin,
+            ...(capabilities.actor?.id ? { userId: capabilities.actor.id } : {}),
+            ...(capabilities.actor?.username ? { username: capabilities.actor.username } : {}) };
+        await writeConfig(selected.config);
+        return { profile: profileName, api_origin: apiOrigin, account: capabilities.actor, permissions: capabilities.features };
+    });
 }
 export async function logout(profile) {
-    const selected = await activeProfile(profile);
-    try {
-        const client = await ApiClient.create(selected.name);
-        await client.request('/api/cli/v2/sessions/current/', { method: 'DELETE' });
-    }
-    catch (error) {
-        if (!(error instanceof CliError) || error.code !== 'session_expired')
-            throw error;
-    }
-    await deleteRefreshCredential(selected.name);
-    return { profile: selected.name };
+    return ApiClient.logout(profile);
 }
 //# sourceMappingURL=auth.js.map

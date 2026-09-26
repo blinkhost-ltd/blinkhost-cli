@@ -10,6 +10,10 @@ export declare class ApiClient {
     private accessToken;
     private constructor();
     static create(profileName?: string): Promise<ApiClient>;
+    private static refresh;
+    static logout(profileName?: string): Promise<{
+        profile: string;
+    }>;
     static fromAccessToken(profileName: string, profile: Profile, accessToken: string): ApiClient;
     projectArchive(projectId: string, mode?: 'portable' | 'source'): Promise<Buffer>;
     request(path: string, init?: RequestInit): Promise<unknown>;
