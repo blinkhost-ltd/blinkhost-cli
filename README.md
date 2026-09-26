@@ -7,7 +7,7 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.4.0
+npm install --global @blinkhost/cli@2.5.0
 blinkhost --version
 ```
 
@@ -15,17 +15,42 @@ Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verificatio
 
 ## Current release
 
-### 2.4.0 — release intelligence and compatibility guidance
+### 2.5.0 — Idam limited preview
 
-- Added `blinkhost update notes [VERSION]` for terminal-accessible, verified release history.
-- Added cached, time-bounded update awareness that stays silent in CI, structured output, and non-interactive sessions.
-- CLI token refresh now records the installed client version so project compatibility guidance does not rely on a stale login record.
+- Added Idam task, source-review, starter, build, export and connected-review commands.
+- Connected-review plans default to GPT-6 Luna and support GPT-6 Sol and GPT-5.6 Terra; older GPT-5.6 plans remain readable.
+- Improved scoped sign-in and operating-system credential handling on Linux, macOS and Windows.
+
+Idam remains a limited preview. Access depends on the server rollout, current
+project permissions and available credits. Installing this CLI does not enable
+Idam or change a subscription. No project migration is required from 2.4.0.
 
 Run `blinkhost update notes` to read published notes in the terminal. The complete version history and compatibility policy are maintained in [CHANGELOG.md](./CHANGELOG.md) and the [developer release notes](https://app.blinkhost.me/docs/releases).
 
 ## Start safely
 
-### In development: Idam staff preview
+### Idam limited preview
+
+Request a review of selected code with
+`ai peer-options TASK_UUID --project PROJECT_UUID`, then
+`ai peer-invite TASK_UUID --project PROJECT_UUID --reviewer USER_ID --digest ACTION_DIGEST --confirm TASK_UUID`.
+Prepare and inspect `ai review` first. Only the selected before-and-after code
+is shared with the named owner or administrator; conversations and other
+proposed files remain private. The reviewer uses `ai peer-inbox --project PROJECT_UUID`,
+`ai peer-review PEER_UUID --project PROJECT_UUID`, then
+`ai peer-approve PEER_UUID --project PROJECT_UUID --digest REVIEW_DIGEST --confirm PEER_UUID`
+or `peer-decline` with the same options. Read commands need `ai:read`; sharing
+and decisions need `ai:approve`. Decisions never save, build or publish.
+The requester saves separately after approval, or explicitly withdraws with
+`ai peer-withdraw TASK_UUID --project PROJECT_UUID --peer PEER_UUID --confirm TASK_UUID`.
+Sharing is optional, but your workspace may require independent approval before
+Idam source saves. Withdrawal ends sharing and preserves history; it does not
+bypass workspace-required review.
+Reviews expire after at most 15 minutes and changes to source or permissions
+require fresh review. Inspect current status after a timeout; do not retry
+automatically. This policy covers Idam source saves only, not starter creation,
+builds or deployments; those retain their separate permissions and approvals.
+These commands require current Idam access. See `blinkhost docs ai`.
 
 Create a supported backend starter with `ai starters --project PROJECT_UUID` and
 `ai starter-review --project PROJECT_UUID --name api --language LANGUAGE_ID --revision SOURCE_REVISION --request-id REQUEST_UUID`.
@@ -35,7 +60,7 @@ This saves new source through normal module limits; it does not build or publish
 No AI credits are used. After an uncertain response, use
 `ai starter-status REVIEW_UUID --project PROJECT_UUID` to reconcile the original
 save, never another create. Read, preparation and approval require `ai:read`,
-`ai:execute` and `ai:approve` respectively. These commands remain unreleased.
+`ai:execute` and `ai:approve` respectively.
 
 Saved WASM modules can be reviewed for a normal, metered build using
 `ai build-modules --project PROJECT_UUID`, followed by
@@ -49,7 +74,7 @@ usage—not AI credits. It does not publish, promote an artifact or commit files
 Unsaved edits are excluded. After a timeout, use
 `ai build-status REVIEW_UUID --project PROJECT_UUID` before any further action;
 do not create a new review to repeat an uncertain build. See `blinkhost docs ai`.
-These commands are staff-only and not yet in the published CLI release.
+These commands require current Idam access and an available module compiler.
 
 For an eligible multi-step task, use
 `blinkhost ai resume TASK_UUID --confirm TASK_UUID` with `ai:execute` to request
@@ -58,9 +83,9 @@ credit limit and confirmed usage. Active work and retry delays are preserved;
 it does not restart stopped or completed tasks, increase spending, approve
 changes or repeat confirmed execution. Project access, revision and guidance
 are checked again. After a timeout, inspect `ai status` before taking another
-action. This command is not yet in the published CLI release.
+action.
 
-Reviewed public sources have a separate disabled-by-default staff gate. Use
+Reviewed public sources have a separate feature gate that is off by default. Use
 `blinkhost ai sources --project PROJECT_UUID` with `ai:read` to inspect the
 available excerpts, attribution and capture/review dates. To use them, set
 `"mode": "research"` and `"research_source_ids": ["SOURCE_SHA256"]` in the
@@ -68,8 +93,7 @@ request JSON (up to four unique IDs). This does not browse or fetch websites.
 Source text counts toward the credit estimate. Expired or withdrawn sources
 cannot start new work; already dispatched work can finish. Task status/export
 retains the excerpts provided, not later versions of the source website. A model
-citation is not proof that a conclusion is correct. These commands are not yet
-in the published CLI release.
+citation is not proof that a conclusion is correct.
 
 Source-review diffs use `[U+…]` markers for invisible control characters and
 annotations for line endings. They are review displays, not patches to copy.
@@ -78,18 +102,18 @@ Structured terminal output escapes controls while preserving the exact decoded
 JSON values. Ordinary Unicode is retained; this is not a confusable-character
 detector or a guarantee that proposed code is safe.
 
-The source branch includes `blinkhost ai` task and reviewed-change commands, with
-offline help at `blinkhost docs ai`. They are **not in the published 2.4.0 package**
-and require an enabled staff pilot. AI task execution (`ai:execute`) and source
+Version 2.5.0 includes `blinkhost ai` task and reviewed-change commands, with
+offline help at `blinkhost docs ai`. They require an enabled Idam preview.
+AI task execution (`ai:execute`) and source
 approval (`ai:approve`) are separate, explicitly requested permissions; existing
-sessions are unchanged. See the [unreleased changelog](./CHANGELOG.md).
+sessions do not gain these permissions automatically. See the [changelog](./CHANGELOG.md).
 
 Saving an approved proposal changes workspace source only. Build, test and preview
 before publishing. To share source with Azure OpenAI for a task, include optional
 `source_paths` in its request JSON (up to eight project-relative paths of saved
 workspace files, 16 KiB each / 24 KiB total). No local files are uploaded. Review
 selected files for credentials; automated screening is not exhaustive. Omit the
-field to share structural metadata only. These commands remain unreleased.
+field to share structural metadata only.
 
 Unknown model usage is never automatically retried or refunded.
 
@@ -103,18 +127,21 @@ save. This is file selection, not automatic dependency analysis or project copyi
 
 Use `blinkhost ai compatibility --project PROJECT_UUID` for a read-only review of
 the saved project's declared dependencies. It requires `ai:read` and the enabled
-staff pilot; it is not in the published CLI. Results identify the workspace
+Idam preview. Results identify the workspace
 revision, manifest paths, declaration sections and inspection limits. Only a fixed
 set of npm and Python package names is checked in `package.json` and single-line
-`requirements.txt` declarations. Python markers and extras are not evaluated;
-includes, pip options, URLs and other manifest formats need manual review.
+`requirements.txt` and static `pyproject.toml` declarations. Runtime, optional and
+build-system requirements keep distinct labels; build-only use is not runtime
+use. Python markers and extras are not evaluated. Dynamic dependencies, tool
+overrides, includes, pip options, URLs and other manifest formats need manual
+review. No lockfile or transitive dependency graph is resolved.
 No findings is **not a compatibility pass**. This command uploads no local
 files, makes no model calls, reserves no credits and does not install, build, test,
 adapt or deploy code. Customer backend execution remains WASM-only. Review project
 metadata before sharing command output, and rerun after workspace changes.
 
 You can save optional project guidance for your own future tasks using the
-unreleased `ai memory-show`, `memory-save` and `memory-clear` commands. First run
+`ai memory-show`, `memory-save` and `memory-clear` commands. First run
 `blinkhost ai memory-show --project PROJECT_UUID` and inspect the saved version.
 Then use `blinkhost ai memory-save --project PROJECT_UUID --file @guidance.txt
 --expected-version VERSION --confirm PROJECT_UUID` to upload a regular UTF-8 file
@@ -131,8 +158,8 @@ never retries it automatically. Reading requires `ai:read`; saving and clearing
 require `ai:execute`. CI workload identities cannot use the personal Idam preview,
 including indirectly through task creation or history, regardless of token scopes.
 
-Connected investigation-and-review sequences are also in development, behind a
-separate disabled staff gate. Inspect `ai status TASK_UUID` first. Then
+Connected investigation-and-review sequences require a separate feature gate.
+Inspect `ai status TASK_UUID` first. Then
 `ai workflow-plan TASK_UUID --maximum-units TOTAL_LIMIT --confirm TASK_UUID`
 saves a draft with two follow-ups of 80 credits each. `TOTAL_LIMIT` must
 cover the original task's approved limit plus 160 credits, up to 2,000 total.
@@ -165,7 +192,7 @@ sharing. This is not a project backup or deployment certificate. Removed content
 is not reconstructed; long histories are marked partial, and existing downloads
 are outside task-history retention. See `blinkhost docs ai` for limits.
 
-To undo an Idam source save in the staff preview, run
+To undo an Idam source save in the limited preview, run
 `blinkhost ai rollback-review TASK_UUID --json`, inspect its file restorations and
 removals, then run `blinkhost ai rollback-approve TASK_UUID --digest UNDO_ACTION_DIGEST --confirm TASK_UUID`.
 This is a separate, expiring approval, not the original source-save digest.
@@ -202,9 +229,27 @@ blinkhost profile use work
 
 Revoke a device with `blinkhost auth revoke SESSION_ID` or disconnect all CLI sessions for the active profile with `blinkhost auth logout`.
 
+If your CLI session is rejected after signing out of all devices, an account
+security change or a BlinkHost security update, run `blinkhost auth login` again
+with the same `--profile` and any explicit `--scope` options you need. Sign in to
+the correct account in your browser and review the new request before approving.
+Reopening an old approval link does not reconnect the CLI. Reauthentication does
+not change your project files, deployments or billing plan. If the new sign-in is
+blocked, check email verification and any required legal acceptance in the
+dashboard; do not copy credentials from another device to work around it.
+
 Interactive credential storage uses macOS Keychain, Windows Password Vault, or Linux Secret Service (`secret-tool` with an available, unlocked session keyring). The CLI intentionally does not fall back to a plaintext refresh-token file. Headless systems should use a registered GitHub OIDC workload or a short-lived runtime access token.
 
 Before opening browser authorization, the CLI checks that the credential tooling can run. This does not prove that your keyring is unlocked; on Linux, start an unlocked Secret Service session first. Missing tooling is reported before a device authorization is requested.
+
+Credential-tool checks stop after five seconds on macOS and Linux, or 15 seconds
+on Windows to allow PowerShell to start. Credential reads and writes stop after
+30 seconds. These checks do not retry. Keyring errors use safe messages without displaying helper
+output. On Linux, an unavailable session keyring is reported as a credential-service
+failure rather than a missing sign-in. Unlock or restart your Secret Service session.
+If browser approval succeeded but saving the session failed or timed out, review
+your CLI sessions in BlinkHost settings before starting another sign-in. The CLI
+does not automatically retry credential writes or fall back to plaintext storage.
 
 ## Create or adopt a project
 
@@ -381,7 +426,7 @@ Pin or roll back explicitly with `npm install --global @blinkhost/cli@VERSION`. 
 ```bash
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.4.0" \
+  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.5.0" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 ```

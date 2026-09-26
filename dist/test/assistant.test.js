@@ -156,6 +156,26 @@ test('Python compatibility requires version two and Python-only declaration sect
         assert.throws(() => validateCompatibility({ ...result, findings: [{ ...finding, ...change }] }, project), CliError);
     }
 });
+test('version three keeps pyproject, requirements and npm declaration qualifiers separate', () => {
+    const finding = { code: 'python_native_dependency', path: 'backend/pyproject.toml', package: 'numpy',
+        sections: ['build-system.requires', 'project.dependencies', 'project.optional-dependencies'] };
+    const result = { project_id: project, schema_version: 1, rules_version: 3, revision: actionDigest,
+        verification: 'declaration_review_only', backend_runtime: 'wasm', findings: [finding], findings_omitted: 0,
+        coverage: { projected_files: 1, package_manifests: 1, inspected_package_manifests: 1, projection_limit_reached: false },
+        limitations: ['Declarations are not a runtime test.'] };
+    validateCompatibility(result, project);
+    for (const section of finding.sections)
+        validateCompatibility({ ...result, findings: [{ ...finding, sections: [section] }] }, project);
+    validateCompatibility({ ...result, findings: [{ ...finding, path: 'requirements.txt', sections: ['requirements'] }] }, project);
+    assert.throws(() => validateCompatibility({ ...result, rules_version: 2 }, project), CliError);
+    assert.throws(() => validateCompatibility({ ...result, rules_version: '3' }, project), CliError);
+    for (const change of [{ sections: [] }, { sections: ['project.dependencies', 'requirements'] },
+        { sections: ['project.dependencies', 'devDependencies'] }, { sections: ['private-group'] },
+        { sections: ['project.dependencies', 'project.dependencies'] }, { path: 'requirements.txt' },
+        { path: 'other.toml' }, { code: 'node_server' }, { package: null }, { sections: ['requirements'] }]) {
+        assert.throws(() => validateCompatibility({ ...result, findings: [{ ...finding, ...change }] }, project), CliError);
+    }
+});
 test('compatibility is a scoped read with explicit unknowns and no upload or execution', async () => {
     for (const args of [['compatibility'], ['compatibility', '--project', '../other'],
         ['compatibility', '--project', project, '--file', '@private.json']]) {
@@ -181,7 +201,7 @@ test('compatibility is a scoped read with explicit unknowns and no upload or exe
         assert.deepEqual(response.data, result);
         assert.match(response.message, /not a compatibility pass/);
         assert.equal(calls, 1);
-        for (const change of [{ project_id: task }, { schema_version: 2 }, { rules_version: 3 },
+        for (const change of [{ project_id: task }, { schema_version: 2 }, { rules_version: 4 },
             { revision: 'invalid' }, { verification: 'verified' }, { backend_runtime: 'native' },
             { coverage: { ...result.coverage, inspected_package_manifests: 1 } }, { limitations: [] },
             { findings: [{ code: 'execute', path: 'script', package: null, sections: [] }] }]) {
@@ -368,7 +388,7 @@ test('assistant dispatch uses only the control plane, does not retry, and binds 
 test('offline installed documentation distinguishes source save from deploy', () => {
     assert.ok(TOP_LEVEL_COMMANDS.includes('ai'));
     const topic = documentationTopic('ai');
-    assert.match(JSON.stringify(topic), /staff preview/);
+    assert.match(JSON.stringify(topic), /limited preview/);
     assert.match(JSON.stringify(topic), /cannot browse, run tests or deploy/);
     assert.match(JSON.stringify(topic), /ai:approve/);
     assert.match(JSON.stringify(topic), /client_request_id/);
@@ -410,6 +430,18 @@ test('plan files reject unsafe files, unsupported steps and unbounded or extra a
         await writeFile(file, invalid);
         await assert.rejects(readWorkflowPlan(`@${file}`), CliError);
     }
+});
+test('workflow plan files accept GPT-6 Luna and Sol alongside GPT-5.6 Terra', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'idam-cli-gpt6-plan-'));
+    const file = join(root, 'plan.json');
+    const plan = {
+        steps: ['gpt-6-luna', 'gpt-5.6-terra', 'gpt-6-sol'].map(model => ({ mode: 'review', model, maximum_units: 80 })),
+        maximum_units: 340, maximum_context_units: 200000,
+    };
+    await writeFile(file, JSON.stringify(plan));
+    assert.deepEqual(await readWorkflowPlan(`@${file}`), plan);
+    await writeFile(file, JSON.stringify({ ...plan, steps: [{ ...plan.steps[0], model: 'gpt-6-terra' }] }));
+    await assert.rejects(readWorkflowPlan(`@${file}`), CliError);
 });
 test('plan edits and approvals need exact saved revision, digest and workflow confirmation', async () => {
     for (const action of ['workflow-revise', 'workflow-approve']) {
@@ -474,8 +506,8 @@ test('workflow commands use scoped control-plane routes and do not repeat writes
         assert.match(calls[0].url, new RegExp(`/api/idam/tasks/${task}/workflow/$`));
         assert.equal(calls[0].init.method, 'POST');
         assert.deepEqual(JSON.parse(String(calls[0].init.body)), {
-            steps: [{ mode: 'diagnose', model: 'gpt-5.6-luna', maximum_units: 80 },
-                { mode: 'review', model: 'gpt-5.6-luna', maximum_units: 80 }], maximum_units: 260, maximum_context_units: 200000,
+            steps: [{ mode: 'diagnose', model: 'gpt-6-luna', maximum_units: 80 },
+                { mode: 'review', model: 'gpt-6-luna', maximum_units: 80 }], maximum_units: 260, maximum_context_units: 200000,
         });
         await runAssistant(['workflow-status', project]);
         assert.match(calls[1].url, new RegExp(`/api/idam/workflows/${project}/$`));

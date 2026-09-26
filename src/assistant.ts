@@ -5,6 +5,7 @@ import { CliError, EXIT } from './errors.js';
 import { validateCompatibility } from './compatibility.js';
 import { validateResearchCatalog } from './research.js';
 import { validateModuleBuild } from './module-build.js';
+import { validatePeerResponse, type PeerExpected } from './peer-review.js';
 import { starterName, starterLanguage, validateStarter, type StarterExpected } from './starter.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -81,7 +82,7 @@ export async function readWorkflowPlan(path: string | undefined): Promise<Record
     || body.steps.some(step => !step || typeof step !== 'object' || Array.isArray(step)
       || Object.keys(step).sort().join(',') !== 'maximum_units,mode,model'
       || !['plan', 'diagnose', 'review'].includes(step.mode)
-      || !['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'].includes(step.model)
+      || !['gpt-6-luna', 'gpt-5.6-terra', 'gpt-6-sol', 'gpt-5.6-luna', 'gpt-5.6-sol'].includes(step.model)
       || !Number.isSafeInteger(step.maximum_units) || step.maximum_units < 1 || step.maximum_units > 2000)
     || body.steps.reduce((total, step) => total + step.maximum_units, 0) >= Number(body.maximum_units)) {
     throw new CliError('Use one to three plan, diagnose or review steps, valid models and whole-number credit limits. The total must also cover the original task. See blinkhost docs ai.', EXIT.validation, 'workflow_plan_invalid');
@@ -126,7 +127,47 @@ export async function runAssistant(input: string[], profile?: string): Promise<{
   let message: string;
   let moduleBuildExpected: { project: string; review?: string; module?: string; revision?: string; digest?: string } | undefined;
   let starterExpected: StarterExpected | undefined;
-  if (['starters', 'starter-review', 'starter-status', 'starter-approve'].includes(action ?? '')) {
+  let peerExpected: PeerExpected | undefined;
+  if (['peer-inbox', 'peer-options', 'peer-invite', 'peer-review', 'peer-approve', 'peer-decline', 'peer-withdraw'].includes(action ?? '')) {
+    const project = identifier(option(args, '--project')).toLowerCase();
+    peerExpected = { project };
+    if (action === 'peer-inbox') {
+      path = `/api/idam/projects/${project}/peer-reviews/`;
+      message = 'Reviews shared with you loaded. Open each review to check current source and access.';
+    } else {
+      const id = identifier(args.shift()).toLowerCase();
+      const requester = ['peer-options', 'peer-invite', 'peer-withdraw'].includes(action!);
+      path = requester ? `/api/idam/tasks/${id}/peer-review/` : `/api/idam/peer-reviews/${id}/`;
+      if (requester) peerExpected.task = id; else peerExpected.peer = id;
+      message = action === 'peer-options' ? 'Eligible reviewers, workspace review requirement and current sharing status loaded.'
+        : 'Review these selected changes before deciding. This is not a save, build or deployment.';
+      if (!['peer-options', 'peer-review'].includes(action!)) {
+        if (option(args, '--confirm')?.toLowerCase() !== id) throw new CliError('Repeat the task or peer review UUID with --confirm before sharing code or recording a decision.', EXIT.usage, 'confirmation_required');
+        if (action === 'peer-withdraw') {
+          peerExpected.peer = identifier(option(args, '--peer')).toLowerCase();
+          path += 'withdraw/';
+          body = { peer_id: peerExpected.peer };
+          message = 'Review withdrawn. Its history is retained. Any review required by your workspace still applies before saving.';
+        } else {
+          const value = option(args, '--digest');
+          if (!value || !digest.test(value)) throw new CliError('Pass the exact digest from the code review you inspected.', EXIT.usage, 'review_digest_required');
+          peerExpected.digest = value;
+          if (action === 'peer-invite') {
+            const reviewer = option(args, '--reviewer');
+            if (!reviewer || !/^[1-9][0-9]*$/.test(reviewer) || !Number.isSafeInteger(Number(reviewer))) throw new CliError('Select a reviewer ID from peer-options.', EXIT.usage, 'reviewer_required');
+            peerExpected.reviewer = Number(reviewer);
+            body = { reviewer_id: Number(reviewer), action_digest: value };
+            message = 'Selected code shared with the named reviewer. Conversation and other proposed files remain private. No source saved.';
+          } else {
+            path += 'approve/';
+            body = { review_digest: value, approve: action === 'peer-approve' };
+            message = 'Peer decision recorded for this version. It does not save, build or publish code.';
+          }
+        }
+      }
+    }
+    noExtra(args);
+  } else if (['starters', 'starter-review', 'starter-status', 'starter-approve'].includes(action ?? '')) {
     const project = identifier(option(args, '--project')).toLowerCase();
     path = `/api/idam/projects/${project}/starters/`;
     starterExpected = { project };
@@ -253,8 +294,8 @@ export async function runAssistant(input: string[], profile?: string): Promise<{
           throw new CliError('Set --maximum-units (161–2000) to cover the original task limit plus 160 additional credits. Inspect ai status first.', EXIT.usage, 'workflow_budget_invalid');
         }
         path = `/api/idam/tasks/${id}/workflow/`;
-        body = { steps: [{ mode: 'diagnose', model: 'gpt-5.6-luna', maximum_units: 80 },
-          { mode: 'review', model: 'gpt-5.6-luna', maximum_units: 80 }],
+        body = { steps: [{ mode: 'diagnose', model: 'gpt-6-luna', maximum_units: 80 },
+          { mode: 'review', model: 'gpt-6-luna', maximum_units: 80 }],
           maximum_units: Number(ceiling), maximum_context_units: 200000 };
         message = 'Draft plan saved, not approved. Your original task continues independently; no follow-up credits were reserved. Inspect workflow-status, revise if needed, then use workflow-approve with the saved revision and digest. No tests, source edits or deployment were requested.';
       } else {
@@ -266,7 +307,7 @@ export async function runAssistant(input: string[], profile?: string): Promise<{
     noExtra(args);
   } else {
     if (!action || !['status', 'events', 'export', 'review', 'approve', 'rollback-review', 'rollback-approve', 'cancel', 'resume'].includes(action)) {
-      throw new CliError('Use ai start, list, sources, status, events, export, review, approve, rollback-review, rollback-approve, cancel, resume, workflow-plan, workflow-revise, workflow-approve, workflow-status, workflow-cancel, compatibility, starters, starter-review, starter-status, starter-approve, build-modules, build-review, build-status, build-approve, memory-show, memory-save or memory-clear. See blinkhost docs ai.', EXIT.usage, 'unknown_action');
+      throw new CliError('Choose an assistant command, such as ai start, ai status, ai review or ai peer-inbox. Run blinkhost docs ai for the full command list, approval steps and examples.', EXIT.usage, 'unknown_action');
     }
     const id = identifier(args.shift());
     path = `/api/idam/tasks/${id}/`;
@@ -313,6 +354,7 @@ export async function runAssistant(input: string[], profile?: string): Promise<{
   const result = await client.request(path, body === undefined ? {} : { method, body: JSON.stringify(body) });
   if (moduleBuildExpected) validateModuleBuild(result, moduleBuildExpected, action!);
   if (starterExpected) validateStarter(result, starterExpected, action!);
+  if (peerExpected) validatePeerResponse(result, peerExpected, action!);
   if (action === 'resume') {
     const response = result as { task?: { id?: unknown; status?: unknown; maximum_units?: unknown }; continuation?: unknown } | null;
     if (!response || typeof response !== 'object'
