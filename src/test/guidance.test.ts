@@ -23,6 +23,26 @@ test('workflow help distinguishes approval permission from plan editing', () => 
   assert.doesNotMatch(details, /plan, revise, approve and cancel need ai:execute/);
 });
 
+test('offline sign-in help explains fresh approval without credential or scope bypass', () => {
+  const details = documentationTopic('auth')?.details.join(' ') ?? '';
+  assert.match(details, /signing out of all devices/);
+  assert.match(details, /blinkhost auth login again with the same --profile/);
+  assert.match(details, /explicit --scope/);
+  assert.match(details, /old approval link cannot reconnect/);
+  assert.match(details, /email verification and required legal acceptance/);
+  assert.match(details, /Do not copy credentials/);
+  assert.match(details, /billing plan are unchanged/);
+});
+
+test('peer help separates optional sharing from workspace-required source review', () => {
+  const details = documentationTopic('ai')?.details.join(' ') ?? '';
+  assert.match(details, /workspace may require independent approval before Idam source saves/);
+  assert.match(details, /Withdrawal ends sharing and preserves history; it does not bypass workspace-required review/);
+  assert.match(details, /source saves only, not starter creation, builds or deployments/);
+  assert.match(details, /Commands require current Idam access/);
+  assert.doesNotMatch(details, /This is not mandatory enterprise governance/);
+});
+
 test('quickstart is local, read-only, and reports safety boundaries', async () => {
   const root = await mkdtemp(join(tmpdir(), 'blinkhost-quickstart-'));
   const before = await readdir(root);

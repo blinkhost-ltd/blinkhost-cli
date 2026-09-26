@@ -1,7 +1,11 @@
+import { type CredentialProbe } from './credential-process.js';
 export interface CredentialStoreStatus {
     available: boolean;
     provider: 'macos-keychain' | 'windows-password-vault' | 'linux-secret-service';
     remediation: string | null;
+    failureCode?: Extract<CredentialProbe, {
+        available: false;
+    }>['failureCode'];
 }
 /** Checks only whether the platform credential service can be invoked. */
 export declare function credentialStoreStatus(): Promise<CredentialStoreStatus>;

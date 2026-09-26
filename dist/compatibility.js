@@ -1,13 +1,23 @@
 import { CliError, EXIT } from './errors.js';
 const codes = new Set(['node_server', 'native_dependency', 'persistent_connections',
     'framework_server_features', 'python_server', 'python_native_dependency', 'manifest_not_inspected', 'manifest_incomplete']);
-const sections = new Set(['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'requirements']);
+const pythonSections = new Set(['project.dependencies', 'project.optional-dependencies', 'build-system.requires']);
+const sections = new Set(['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'requirements', ...pythonSections]);
+const pythonQualifiers = (version, path, qualifiers) => {
+    if (version !== 2 && version !== 3)
+        return false;
+    if (qualifiers.length === 1 && qualifiers[0] === 'requirements') {
+        return version === 2 || path.split('/').at(-1) === 'requirements.txt';
+    }
+    return version === 3 && path.split('/').at(-1) === 'pyproject.toml'
+        && qualifiers.length > 0 && qualifiers.every(section => typeof section === 'string' && pythonSections.has(section));
+};
 const count = (value, max) => Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= max;
 const object = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
 // Bind remote evidence to this project and known declaration-only semantics.
 // This validates output, never resolves packages or runs local code.
 export function validateCompatibility(value, projectId) {
-    if (!object(value) || value.project_id !== projectId || value.schema_version !== 1 || (value.rules_version !== 1 && value.rules_version !== 2)
+    if (!object(value) || value.project_id !== projectId || value.schema_version !== 1 || (value.rules_version !== 1 && value.rules_version !== 2 && value.rules_version !== 3)
         || typeof value.revision !== 'string' || !/^[a-f0-9]{64}$/.test(value.revision)
         || value.verification !== 'declaration_review_only' || value.backend_runtime !== 'wasm'
         || !count(value.findings_omitted, 8000) || !Array.isArray(value.findings) || value.findings.length > 128
@@ -17,8 +27,8 @@ export function validateCompatibility(value, projectId) {
             || !Array.isArray(f.sections) || f.sections.length > 4 || new Set(f.sections).size !== f.sections.length
             || f.sections.some(s => typeof s !== 'string' || !sections.has(s))
             || (f.code.startsWith('python_')
-                ? value.rules_version !== 2 || f.sections.length !== 1 || f.sections[0] !== 'requirements'
-                : f.sections.includes('requirements'))
+                ? !pythonQualifiers(value.rules_version, f.path, f.sections)
+                : f.sections.some(section => section === 'requirements' || pythonSections.has(section)))
             || (f.code.startsWith('manifest_') ? f.package !== null || f.sections.length !== 0 : !f.package || !f.sections.length))
         || !object(value.coverage) || !count(value.coverage.projected_files, 2000) || !count(value.coverage.package_manifests, 2000)
         || Number(value.coverage.package_manifests) > Number(value.coverage.projected_files)

@@ -2,7 +2,57 @@
 
 This file records customer-visible CLI changes. BlinkHost uses semantic versioning for the CLI, while security and migration impact are classified separately. A patch may therefore require prompt action, and a major release may coexist with an earlier supported line during its documented migration window.
 
-## Unreleased — Idam staff preview
+## 2.5.0 — Idam limited preview
+
+This release adds Idam commands for eligible accounts on an enabled control plane.
+Idam remains a limited preview. Workspace permissions, feature availability and
+spending limits are checked by the server. Installing the CLI does not enable
+Idam or change a subscription. Node.js 22.12 or newer is required; no project
+migration is needed from 2.4.0.
+
+- Connected-review plans default to GPT-6 Luna and accept GPT-6 Luna and Sol
+  alongside GPT-5.6 Terra. Existing GPT-5.6 plan selections remain readable and
+  editable. Plan confirmation, approval and credit limits are unchanged.
+
+- Windows sign-in allows up to 15 seconds for the read-only credential-tool
+  startup check. A timeout still stops sign-in safely; credential operations
+  retain their 30-second limit, with no automatic retry or plaintext fallback.
+
+- Added named code review: list eligible reviewers, explicitly share
+  selected changes, inspect the shared review, approve or request changes, and
+  withdraw sharing. Decisions are bound to the reviewed version and current
+  access; they never save, build or publish. Conversations stay private.
+  Sharing is optional, but withdrawing a review does not bypass independent
+  approval required by a workspace for Idam source saves. This policy does not
+  cover starter creation, builds or deployments.
+  Reviewer options validate the server's explicit review-required flag; a missing
+  or malformed flag is not treated as permission to skip review.
+
+- Windows sign-in no longer removes a saved credential before writing its
+  replacement. Vault failures stop the operation without retrying or displaying
+  private diagnostics; refresh credentials remain confined to an input pipe.
+
+- macOS credential writes now send refresh tokens through a private input pipe,
+  not process arguments. A bounded single-command input rejects control
+  characters and preserves write failures; no temporary credential file or
+  automatic write retry is used.
+
+- Added sign-in recovery guidance for globally revoked sessions and server-side
+  security updates. When a fresh sign-in is required, use the same profile and
+  explicitly request the permissions you need; an old approval link cannot
+  reconnect your device. This does not migrate project files or change billing.
+
+- Bounded operating-system credential helpers and removed raw helper diagnostics
+  from errors. Linux keyring failures are no longer treated as missing credentials;
+  Windows missing-item handling distinguishes other vault errors. Sign-in guidance
+  explains recovery after browser approval without retrying an uncertain write.
+  Added a separate hosted-CI native-vault check for Linux, macOS and Windows
+  using only temporary synthetic credentials; ordinary local tests do not
+  modify the user's keyring. Linux and macOS checks also exercise a locked
+  synthetic keyring, bounded errors and recovery without losing saved credentials.
+  Windows checks cover normal vault operations, not a simulated desktop lock.
+  Linux also checks for retained locked credentials before reporting a missing
+  credential or successful removal when the keyring silently refuses to unlock.
 
 - Added `projects export PROJECT_UUID --source-only --output ./source.zip` for
   backend-only projects and unchanged source downloads. No build configuration,
@@ -63,6 +113,11 @@ This file records customer-visible CLI changes. BlinkHost uses semantic versioni
   promise of runtime support. Includes, URLs and pip options are not followed;
   environment markers and extras are not evaluated. No code runs or changes.
 
+- Extended the same bounded review to static `pyproject.toml` dependencies,
+  optional dependencies and build-system requirements, with separate fixed
+  labels. Dynamic/tool-specific declarations stay unknown. No build hooks run,
+  optional-group names are not disclosed, and older rule responses remain valid.
+
 - Task exports identify the reviewed file selection separately from the full
   proposal. An applied timestamp records a save, not a successful build or the
   current contents of files. Review contents and approval tokens stay excluded.
@@ -87,7 +142,8 @@ This file records customer-visible CLI changes. BlinkHost uses semantic versioni
   editing do not start follow-ups. Approval binds the inspected revision and
   digest with exact workflow confirmation. `workflow-start` is a draft-only
   compatibility alias. Saved version history remains available on each task.
-  Separately gated and disabled; no tools, tests, source writes or deployments.
+  Separately gated; plan approval does not authorize tools, tests, source writes
+  or deployments.
 
 - Added `ai rollback-review` and `ai rollback-approve` for an explicitly reviewed,
   source-only undo. Later file edits are protected; unchanged new files are removed
@@ -109,9 +165,8 @@ This file records customer-visible CLI changes. BlinkHost uses semantic versioni
   default sign-ins and workload identities do not receive AI permissions automatically.
 - Included offline `docs ai` with scope, privacy, retry and verification limits.
 
-These commands require the unreleased control-plane integration and authorized staff
-pilot access. They are not available in the published 2.4.0 package and do not enable
-Idam for customers. No project migration or automatic update is performed.
+These commands require the matching control-plane integration and current project
+access. They were not included in 2.4.0. No automatic update is performed.
 
 ## 2.4.0 — 2026-09-02
 
