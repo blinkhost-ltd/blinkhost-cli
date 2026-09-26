@@ -15,6 +15,16 @@ Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verificatio
 
 ## Current release
 
+### 2.5.1 — saved-session concurrency
+
+Commands sharing a saved profile serialize credential refresh and sign-out so
+concurrent processes do not reuse a rotated credential. Temporary refresh
+failures preserve the saved credential; rejected sessions still require a fresh
+sign-in. Explicit environment credentials remain the caller's responsibility.
+If a command reports `credential_busy`, let the other command finish. After a
+crash, confirm that no command for that profile is running before removing the
+reported lock file. The file contains process metadata, never credentials.
+
 ### 2.5.0 — Idam limited preview
 
 - Added Idam task, source-review, starter, build, export and connected-review commands.
