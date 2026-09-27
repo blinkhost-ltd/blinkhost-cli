@@ -63,6 +63,12 @@ function validIdempotencyKey(value) {
         throw new CliError('Idempotency keys must be from 1 to 256 bytes and cannot contain control characters.', EXIT.usage, 'invalid_idempotency_key');
     return value;
 }
+function publicationKey(value) {
+    if (!value || !/^[A-Za-z0-9._:-]{8,128}$/.test(value)) {
+        throw new CliError('Publication requires --idempotency-key KEY: 8–128 letters, digits, dots, underscores, colons or hyphens. Save this key to recover the same request after a timeout.', EXIT.usage, 'publication_key_required');
+    }
+    return value;
+}
 async function readPayload(value) {
     if (!value)
         return {};
@@ -109,9 +115,27 @@ export async function runRemote(group, input, profile) {
     const project = takeOption(args, '--project');
     const query = takeRepeated(args, '--query');
     const dataOption = takeOption(args, '--data');
+    const publicationKeyOption = group === 'deployments' && ['action', 'publication-lookup'].includes(action)
+        ? takeOption(args, '--idempotency-key') : undefined;
+    const isPublication = group === 'deployments' && action === 'action'
+        && ['activate', 'promote', 'retry', 'rollback'].includes(args[1] || '');
+    const key = isPublication || (group === 'deployments' && action === 'publication-lookup')
+        ? publicationKey(publicationKeyOption) : undefined;
+    if (publicationKeyOption !== undefined && key === undefined) {
+        throw new CliError('--idempotency-key is supported here only for activate, promote, retry and rollback.', EXIT.usage, 'unexpected_argument');
+    }
     const client = await ApiClient.create(profile);
     const base = collectionPath(group, project);
     const data = await readPayload(dataOption);
+    if (group === 'deployments' && ['publication-status', 'publication-lookup'].includes(action)) {
+        if (query.length || dataOption || project)
+            throw new CliError('Publication recovery accepts only its operation ID or original idempotency key.', EXIT.usage, 'unexpected_argument');
+        const path = action === 'publication-status'
+            ? `/api/deployment-publications/${safeIdentifier(args.shift(), 'Operation ID')}/`
+            : '/api/deployment-publications/lookup/';
+        noExtra(args);
+        return client.request(path, key ? { headers: { 'Idempotency-Key': key } } : {});
+    }
     if (action === 'list') {
         noExtra(args);
         return client.request(`${base}${queryString(query)}`);
@@ -143,6 +167,24 @@ export async function runRemote(group, input, profile) {
         const id = safeIdentifier(args.shift());
         const operation = safeIdentifier(args.shift(), 'Action');
         noExtra(args);
+        if (isPublication && key) {
+            try {
+                const result = await client.request(`${base}${id}/${operation}/`, {
+                    method: 'POST', body: JSON.stringify(data), headers: { 'Idempotency-Key': key },
+                });
+                return { ...result, idempotency_key: key };
+            }
+            catch (error) {
+                if (error instanceof CliError) {
+                    throw new CliError(error.message, error.exitCode, error.code, [...error.details,
+                        `Publication key: ${key}`,
+                        `Check with the same account and profile: blinkhost deployments publication-lookup --idempotency-key ${key}`,
+                        'A timeout or server error may follow a committed request. Keep the original key; do not submit a replacement request.',
+                    ]);
+                }
+                throw error;
+            }
+        }
         return client.request(`${base}${id}/${operation}/`, { method: 'POST', body: JSON.stringify(data) });
     }
     throw new CliError(`Unknown ${group} action: ${action}.`, EXIT.usage, 'unknown_action');

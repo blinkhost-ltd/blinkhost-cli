@@ -141,7 +141,11 @@ const TOPICS = {
     connections: resource('connections', 'Manage project-to-repository source connections.'),
     previews: resource('previews', 'Manage temporary preview environments.', ['`previews wait ID [--timeout 10..3600]` waits for a terminal state. `previews open ID` accepts only trusted BlinkHost HTTPS preview hosts. Preview operations can consume plan resources.']),
     builds: resource('builds', 'Create, inspect and wait for verified builds.', ['`builds wait ID [--timeout 10..3600]` stops on success, failure, cancellation, expiry or timeout. Builds can consume plan resources.']),
-    deployments: resource('deployments', 'Manage production deployments and protected release actions.', ['Rollback uses `deployments action DEPLOYMENT_ID rollback --data @rollback.json`. Protected environments can require approval and a verified artifact. Deployment operations can consume plan resources.']),
+    deployments: resource('deployments', 'Manage production deployments and protected release actions.', [
+        'Activate, promote, retry and rollback require a saved request key: `deployments action DEPLOYMENT_ID rollback --idempotency-key KEY`. Use 8–128 letters, digits, dots, underscores, colons or hyphens. A new key means a new request.',
+        'After a timeout, use `deployments publication-lookup --idempotency-key KEY` with the same account and profile. Inspect a known operation with `deployments publication-status OPERATION_ID`. Keep the original key when recovering a request; these commands never resubmit it.',
+        'Publication success confirms the control-plane commit. Check result_status and result_is_current to establish release propagation and current routing. Protected environments can require approval and a verified artifact. Deployment operations can consume plan resources.',
+    ]),
     modules: resource('modules', 'Manage Rust, Go, Python, JavaScript and TypeScript Functions.'),
     functions: {
         name: 'functions', title: 'Function triggers and runs', summary: 'Manage beta event, schedule and background triggers with explicit retry and idempotency controls.',
