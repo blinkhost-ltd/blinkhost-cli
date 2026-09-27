@@ -2,6 +2,21 @@
 
 This file records customer-visible CLI changes. BlinkHost uses semantic versioning for the CLI, while security and migration impact are classified separately. A patch may therefore require prompt action, and a major release may coexist with an earlier supported line during its documented migration window.
 
+## 2.5.2 — Deployment request recovery
+
+Activate, promote, retry and rollback now require a saved `--idempotency-key`.
+After a timeout, `deployments publication-lookup --idempotency-key KEY` reads
+the original request using the same account and profile. Known operations can
+be inspected with `deployments publication-status OPERATION_ID`. Neither
+recovery command resubmits work. Preserve the original key when a response is
+lost; a new key represents a new request.
+
+These commands require a control plane with deployment publication support.
+Update deployment scripts to supply the key before upgrading. Publication
+success confirms the control-plane commit; `result_status` and
+`result_is_current` describe propagation and current routing separately.
+Workspace permissions, approvals and Idam limited-preview policy still apply.
+
 ## 2.5.1 — Saved-session concurrency
 
 Commands sharing a saved profile now serialize credential refresh and sign-out.

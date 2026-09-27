@@ -7,13 +7,22 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.5.0
+npm install --global @blinkhost/cli@2.5.2
 blinkhost --version
 ```
 
 Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verification bundle are available at <https://github.com/blinkhost-ltd/blinkhost-cli/releases>.
 
 ## Current release
+
+### 2.5.2 — deployment request recovery
+
+Activate, promote, retry and rollback require a saved `--idempotency-key`.
+Update scripts to supply a key before upgrading. These commands require a
+control plane with deployment publication support; recovery reads the original
+request after a timeout without submitting another deployment. Keep the same
+account, profile and key while recovering. Workspace permissions and approvals
+still apply.
 
 ### 2.5.1 — saved-session concurrency
 
@@ -347,8 +356,23 @@ Create and update operations accept a JSON object or `@path` to a JSON file:
 
 ```bash
 blinkhost projects create --data @project.json
-blinkhost deployments action DEPLOYMENT_ID rollback --data @rollback.json
+blinkhost deployments action DEPLOYMENT_ID rollback --data @rollback.json --idempotency-key SAVED_REQUEST_KEY
 ```
+
+For activate, promote, retry and rollback, save a unique request key before the
+first command. Keys accept 8–128 letters, digits, dots, underscores, colons or
+hyphens. If the response is lost, use the same account and profile to inspect
+the original request:
+
+```bash
+blinkhost deployments publication-lookup --idempotency-key SAVED_REQUEST_KEY
+blinkhost deployments publication-status OPERATION_ID
+```
+
+These recovery commands only read status. A new key starts a separate request;
+do not replace a key because of a timeout. Publication success confirms the
+control-plane commit. Inspect `result_status` and `result_is_current` to check
+release propagation and current routing.
 
 Destructive operations require the exact resource ID twice:
 
@@ -436,7 +460,7 @@ Pin or roll back explicitly with `npm install --global @blinkhost/cli@VERSION`. 
 ```bash
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.5.0" \
+  --certificate-identity "https://github.com/blinkhost-ltd/blinkhost-cli/.github/workflows/release.yml@refs/tags/v2.5.2" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 ```
