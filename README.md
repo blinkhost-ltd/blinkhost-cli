@@ -13,6 +13,16 @@ blinkhost --version
 
 Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verification bundle are available at <https://github.com/blinkhost-ltd/blinkhost-cli/releases>.
 
+## Upcoming 2.6.0 — SEO and AEO commands
+
+Run `blinkhost seo local ./out --gate --json` to check local HTML metadata,
+or `blinkhost seo audit PROJECT_UUID --pages 10 --json` for a hosted audit.
+Use `blinkhost seo findings PROJECT_UUID AUDIT_UUID --json` until the audit is
+terminal, then inspect its coverage and gate. `blinkhost seo --help` lists
+verification, imports, reports and selected-model Idam remediation commands.
+Hosted access requires an enabled server and an existing subscription allowance.
+These commands are not in the published 2.5.2 package yet.
+
 ## Current release
 
 ### 2.5.2 — deployment request recovery
