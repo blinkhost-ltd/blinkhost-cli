@@ -2,6 +2,15 @@
 
 This file records customer-visible CLI changes. BlinkHost uses semantic versioning for the CLI, while security and migration impact are classified separately. A patch may therefore require prompt action, and a major release may coexist with an earlier supported line during its documented migration window.
 
+## 2.6.0 — SEO and AEO commands (unreleased)
+
+Adds `seo local`, hosted audits and findings, baseline verification, cancellation,
+diagnostics, field reports, normalized imports and documentation evaluation.
+Remediation passes the selected model, credit limit and request identity to
+ordinary Idam. Hosted features depend on server rollout and subscription grants.
+Queued audits must be polled to a terminal result before interpreting their gate.
+Local checks cover title, description and canonical metadata only.
+
 ## 2.5.2 — Deployment request recovery
 
 Activate, promote, retry and rollback now require a saved `--idempotency-key`.

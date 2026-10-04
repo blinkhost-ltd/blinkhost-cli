@@ -27,6 +27,12 @@ const resource = (name, summary, extra = []) => ({
     url: DOCUMENTATION_URL,
 });
 const TOPICS = {
+    seo: {
+        name: 'seo', title: 'SEO and AEO audits', summary: 'Check local HTML or published public deployments, then verify selected fixes.', url: `${DOCUMENTATION_URL}/seo`,
+        usage: ['blinkhost seo local DIRECTORY [--gate]', 'blinkhost seo audit PROJECT_UUID [--pages N] [--browser-pages N] [--gate]', 'blinkhost seo findings PROJECT_UUID AUDIT_UUID', 'blinkhost seo verify PROJECT_UUID AUDIT_UUID [--gate]', 'blinkhost seo cancel PROJECT_UUID AUDIT_UUID', 'blinkhost seo diagnostics PROJECT_UUID', 'blinkhost seo field PROJECT_UUID', 'blinkhost seo import PROJECT_UUID FILE.json', 'blinkhost seo docs-evaluate PROJECT_UUID FILE.json', 'blinkhost seo remediate PROJECT_UUID AUDIT_UUID --model MODEL --max-units N --findings KEY,KEY'],
+        details: ['Use --json for machine output. A failed completed gate exits the validation code; queued jobs must be polled before checking their gate.', 'Audit accepts --changed to prioritize changed routes and template representatives, --paths /,/docs for an explicit public selection, and --baseline AUDIT_UUID for compatible comparisons. Removed routes remain unverified.', 'Local HTML checks cover title, description and canonical only; hosted checks record explicit network and rendering coverage.', 'Remediation uses ordinary Idam model entitlement and wallet controls. Imports and documentation tasks use bounded JSON contracts.'],
+        examples: ['blinkhost seo local ./out --gate --json'], related: ['ai', 'ci'],
+    },
     ai: {
         name: 'ai', title: 'Idam assistant — limited preview', summary: 'Inspect tasks and explicitly review source proposals through the BlinkHost control plane.',
         usage: ['blinkhost ai start --request @request.json', 'blinkhost ai list --project PROJECT_UUID',
@@ -230,7 +236,7 @@ const COMMANDS = [
     'quickstart', 'docs', 'create', 'init', 'validate', 'manifest', 'doctor', 'test', 'auth', 'ai', 'profile', 'projects',
     'repositories', 'connections', 'previews', 'builds', 'deployments', 'modules', 'functions', 'databases', 'bindings', 'assets',
     'secrets', 'organizations', 'templates', 'approvals', 'handoffs', 'policies', 'workloads', 'dev', 'logs', 'metrics',
-    'analytics', 'support', 'completion', 'update', 'ci', 'plugins', 'api',
+    'analytics', 'seo', 'support', 'completion', 'update', 'ci', 'plugins', 'api',
 ];
 export const TOP_LEVEL_COMMANDS = [...COMMANDS];
 export function documentationIndex() {

@@ -11,6 +11,7 @@ import { createScaffold } from './templates.js';
 import { ApiClient } from './api.js';
 import { login, logout } from './auth.js';
 import { runAssistant } from './assistant.js';
+import { runSeo } from './seo.js';
 import { exportProject } from './project-export.js';
 import { activeProfile, readConfig, validateProfileName, writeConfig } from './config.js';
 import { openPreview, projectStatus, rawApi, readProjectLink, runFunctions, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
@@ -318,6 +319,13 @@ export async function main(argv = process.argv.slice(2)) {
         else if (command === 'ai') {
             const result = await runAssistant(args, profile);
             emit({ ok: true, command: 'ai', ...result }, json);
+        }
+        else if (command === 'seo') {
+            const data = await runSeo(args, profile);
+            emit({ ok: true, command, message: 'SEO evidence loaded.', data }, json);
+            const gate = data.summary?.gate ?? data.gate;
+            if (gate && !gate.passed)
+                return EXIT.validation;
         }
         else if (command === 'auth') {
             const action = args.shift() || 'status';
