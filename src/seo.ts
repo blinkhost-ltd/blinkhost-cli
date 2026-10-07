@@ -157,7 +157,13 @@ export async function runSeo(args: string[], profile?: string): Promise<Record<s
   const projectBase = `/api/seo/projects/${projectId}/`;
   const post = async (path: string, body: unknown) => await request(path, { method: 'POST', body: JSON.stringify(body) }) as Record<string, unknown>;
   const submitTask = async (path: string, body: Record<string, unknown>) => {
-    try { return await post(path, body); }
+    try {
+      const result = await post(path, body);
+      if (!result || typeof result !== 'object' || Array.isArray(result) || typeof result.id !== 'string' || !uuid.test(result.id)) {
+        throw new CliError('The BlinkHost API did not confirm the SEO task. Its response was invalid.', EXIT.remote, 'seo_response_invalid');
+      }
+      return result;
+    }
     catch (error) {
       if (error instanceof CliError) throw new CliError(error.message, error.exitCode, error.code, [
         ...error.details, `SEO request ID: ${body.client_request_id}`,
