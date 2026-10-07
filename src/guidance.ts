@@ -41,6 +41,12 @@ const resource = (name: string, summary: string, extra: string[] = []): Document
 });
 
 const TOPICS: Record<string, DocumentationTopic> = {
+  seo: {
+    name: 'seo', title: 'SEO and AEO audits', summary: 'Check local HTML or published public deployments, then verify selected fixes.', url: `${DOCUMENTATION_URL}/seo`,
+    usage: ['blinkhost seo local DIRECTORY [--gate]', 'blinkhost seo audit PROJECT_UUID [--pages N] [--browser-pages N] [--gate]', 'blinkhost seo findings PROJECT_UUID AUDIT_UUID', 'blinkhost seo verify PROJECT_UUID AUDIT_UUID [--gate]', 'blinkhost seo cancel PROJECT_UUID AUDIT_UUID', 'blinkhost seo diagnostics PROJECT_UUID', 'blinkhost seo field PROJECT_UUID', 'blinkhost seo import PROJECT_UUID FILE.json', 'blinkhost seo import-native PROJECT_UUID FORMAT EXPORT_FILE PROVENANCE.json', 'blinkhost seo docs-evaluate PROJECT_UUID FILE.json', 'blinkhost seo content-status PROJECT_UUID', 'blinkhost seo content-index PROJECT_UUID', 'blinkhost seo content-delete PROJECT_UUID', 'blinkhost seo content-search PROJECT_UUID REQUEST.json', 'blinkhost seo content-result PROJECT_UUID QUERY_UUID', 'blinkhost seo sample PROJECT_UUID REQUEST.json', 'blinkhost seo samples PROJECT_UUID', 'blinkhost seo sample-result PROJECT_UUID SAMPLE_UUID', 'blinkhost seo sample-delete PROJECT_UUID SAMPLE_UUID', 'blinkhost seo research PROJECT_UUID REQUEST.json', 'blinkhost seo research-status PROJECT_UUID', 'blinkhost seo research-result PROJECT_UUID EXPERIMENT_UUID', 'blinkhost seo research-cancel PROJECT_UUID EXPERIMENT_UUID', 'blinkhost seo remediate PROJECT_UUID AUDIT_UUID --model MODEL --max-units N --findings KEY,KEY'],
+    details: ['Use --json for machine output. A failed completed gate exits the validation code; queued jobs must be polled before checking their gate.', 'Audit accepts --changed to prioritize changed routes and template representatives, --paths /,/docs for an explicit public selection, and --baseline AUDIT_UUID for compatible comparisons. Removed routes remain unverified.', 'Local HTML checks cover title, description and canonical only; hosted checks record explicit network and rendering coverage.', 'Remediation uses ordinary Idam model entitlement and wallet controls. Imports and documentation tasks use bounded JSON contracts.', 'Search and model experiments require a stable client_request_id in their JSON request. Reuse the same file on retry; poll the returned ID. Experiments use the selected permitted model and ordinary wallet. Public documentation retrieval and controlled experiments do not measure answers in external AI products.', 'Public research requires public_query_consent: true, an explicit query, max_reads from 1 to 5, a permitted model and maximum_units. Model work uses the ordinary wallet; Azure search and its grounding model use verified prepaid USD research funds. Check research-status for the per-read hold and available balance. Cancellation stops future reads; sent reads still need their cost receipts.'],
+    examples: ['blinkhost seo local ./out --gate --json'], related: ['ai', 'ci'],
+  },
   ai: {
     name: 'ai', title: 'Idam assistant — limited preview', summary: 'Inspect tasks and explicitly review source proposals through the BlinkHost control plane.',
     usage: ['blinkhost ai start --request @request.json', 'blinkhost ai list --project PROJECT_UUID',
@@ -245,7 +251,7 @@ const COMMANDS = [
   'quickstart', 'docs', 'create', 'init', 'validate', 'manifest', 'doctor', 'test', 'auth', 'ai', 'profile', 'projects',
   'repositories', 'connections', 'previews', 'builds', 'deployments', 'modules', 'functions', 'databases', 'bindings', 'assets',
   'secrets', 'organizations', 'templates', 'approvals', 'handoffs', 'policies', 'workloads', 'dev', 'logs', 'metrics',
-  'analytics', 'support', 'completion', 'update', 'ci', 'plugins', 'api',
+  'analytics', 'seo', 'support', 'completion', 'update', 'ci', 'plugins', 'api',
 ] as const;
 
 export const TOP_LEVEL_COMMANDS = [...COMMANDS];
