@@ -8,6 +8,10 @@ import { CliError, EXIT } from './errors.js';
 export const SEO_VERSION = 'blinkhost-seo/v1';
 export const SEO_RULESET = '2026-10-05.1';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function requestIdentity(value: string | undefined, repeated: boolean): string {
+  if (!value || !uuid.test(value) || repeated) throw new CliError('Provide --request-id UUID exactly once.', EXIT.usage, 'seo_request_id_invalid');
+  return value;
+}
 async function boundedFile(file: string, maximum = 100000): Promise<Buffer> {
   const handle = await open(resolve(file), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
@@ -152,6 +156,16 @@ export async function runSeo(args: string[], profile?: string): Promise<Record<s
   };
   const projectBase = `/api/seo/projects/${projectId}/`;
   const post = async (path: string, body: unknown) => await request(path, { method: 'POST', body: JSON.stringify(body) }) as Record<string, unknown>;
+  const submitTask = async (path: string, body: Record<string, unknown>) => {
+    try { return await post(path, body); }
+    catch (error) {
+      if (error instanceof CliError) throw new CliError(error.message, error.exitCode, error.code, [
+        ...error.details, `SEO request ID: ${body.client_request_id}`,
+        `If submission is uncertain, retry the unchanged command with --request-id ${body.client_request_id}.`,
+      ]);
+      throw error;
+    }
+  };
   if (['content-status', 'content-index', 'content-delete', 'samples', 'research-status'].includes(action ?? '') && !args.length) {
     const path = `${projectBase}${action === 'samples' ? 'samples' : action === 'research-status' ? 'research' : 'content/index'}/`;
     if (action === 'content-index') return post(path, {});
@@ -187,9 +201,14 @@ export async function runSeo(args: string[], profile?: string): Promise<Record<s
     const auditId = action === 'verify' ? args.shift() : undefined;
     if (action === 'verify' && (!auditId || !uuid.test(auditId))) throw new CliError('Provide the audit UUID.', EXIT.usage, 'seo_audit_required');
     const options: Record<string, unknown> = {client_request_id: randomUUID(), page_limit: 100};
+    let explicitRequestId = false;
     while (args.length) {
       const flag = args.shift();
       if (flag === '--gate') options.gate = true;
+      else if (flag === '--request-id') {
+        options.client_request_id = requestIdentity(args.shift(), explicitRequestId);
+        explicitRequestId = true;
+      }
       else if (flag === '--changed') options.scope = 'changed';
       else if (flag === '--paths') {
         const value = args.shift()?.split(',');
@@ -208,22 +227,27 @@ export async function runSeo(args: string[], profile?: string): Promise<Record<s
       } else throw new CliError('Unknown SEO option.', EXIT.usage, 'seo_usage');
     }
     if (Array.isArray(options.paths) && options.paths.length > Number(options.page_limit)) throw new CliError('Paths exceed the page limit.', EXIT.usage, 'seo_paths');
-    return post(action === 'audit' ? base : `${base}${auditId}/verify/`, options);
+    return submitTask(action === 'audit' ? base : `${base}${auditId}/verify/`, options);
   }
   if (action === 'findings' && args.length === 1 && uuid.test(args[0] ?? "")) return await request(`${base}${args[0]}/`) as Record<string, unknown>;
   if (action === 'cancel' && args.length === 1 && uuid.test(args[0] ?? "")) return post(`${base}${args[0]}/cancel/`, {});
   if (action === 'remediate') {
     const auditId = args.shift();
     const body: Record<string, unknown> = {client_request_id: randomUUID()};
+    let explicitRequestId = false;
     while (args.length) {
       const flag = args.shift(), value = args.shift();
       if (flag === '--model') body.model = value;
+      else if (flag === '--request-id') {
+        body.client_request_id = requestIdentity(value, explicitRequestId);
+        explicitRequestId = true;
+      }
       else if (flag === '--max-units') body.maximum_units = Number(value);
       else if (flag === '--findings') body.finding_keys = value?.split(',');
       else throw new CliError('Unknown remediation option.', EXIT.usage, 'seo_usage');
     }
     if ((!auditId || !uuid.test(auditId)) || typeof body.model !== 'string' || !body.model || !Number.isInteger(body.maximum_units) || Number(body.maximum_units) < 1 || Number(body.maximum_units) > 2000 || !Array.isArray(body.finding_keys) || !body.finding_keys.length || body.finding_keys.length > 10 || body.finding_keys.some(key => !/^[0-9a-f]{64}$/.test(String(key)))) throw new CliError('Use seo remediate PROJECT AUDIT --model MODEL --max-units N --findings KEY,KEY.', EXIT.usage, 'seo_model_budget_required');
-    return post(`${base}${auditId}/remediate/`, body);
+    return submitTask(`${base}${auditId}/remediate/`, body);
   }
   throw new CliError('See blinkhost help seo for audit, documentation search and model experiment commands.', EXIT.usage, 'seo_usage');
 }

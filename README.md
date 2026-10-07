@@ -279,6 +279,23 @@ blinkhost help create
 
 `quickstart` is local, read-only, and makes no network requests. It checks Node.js, Git, the operating-system credential service, the selected directory, and any existing BlinkHost manifest. It never signs in, uploads source, creates a cloud resource, or incurs usage. The bundled `docs` reference is offline and matches the installed CLI version; use the linked web documentation for longer guides.
 
+## SEO and AEO request retries
+
+Hosted audits, verification and Idam remediation accept `--request-id REQUEST_UUID`:
+
+```bash
+blinkhost seo audit PROJECT_UUID --pages 100 --request-id REQUEST_UUID
+blinkhost seo verify PROJECT_UUID AUDIT_UUID --request-id REQUEST_UUID
+blinkhost seo remediate PROJECT_UUID AUDIT_UUID --model MODEL --max-units 100 --findings FINDING_KEY --request-id REQUEST_UUID
+```
+
+Choose a UUID for each new task and keep it with the command. After a timeout or
+lost response, retry the same command with the same UUID and unchanged inputs.
+This lets the server reuse the original task and wallet hold. Changing the model,
+wallet limit, findings or audit options requires a fresh UUID for a new task.
+If omitted, the CLI generates an ID and includes it as `SEO request ID` in a
+submission error, so you can supply it with `--request-id` when retrying.
+
 ## Connect an account
 
 ```bash
