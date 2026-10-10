@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { checkLocalHtml, localAudit, runSeo } from '../seo.js';
 import { ApiClient } from '../api.js';
-import { EXIT } from '../errors.js';
+import { CliError, EXIT } from '../errors.js';
 const good = '<title>Docs</title><meta name="description" content="Useful docs"><link rel="canonical" href="https://example.com/docs">';
+const confirmedTask = { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', status: 'queued' };
 test('local findings use stable keys and explicitly untrusted evidence', () => {
     assert.deepEqual(checkLocalHtml(good, '/docs', 'docs.html'), []);
     const a = checkLocalHtml('', '/docs', 'docs.html'), b = checkLocalHtml('<h1>Updated</h1>', '/docs', 'docs.html');
@@ -50,7 +51,7 @@ test('hosted argument validation happens before auth or network', async () => {
 });
 test('hosted tasks retain bounds, selected model and idempotency', async () => {
     const original = ApiClient.create, calls = [];
-    ApiClient.create = async () => ({ request: async (path, options) => { calls.push({ path, body: JSON.parse(options.body) }); return { status: 'queued' }; } });
+    ApiClient.create = async () => ({ request: async (path, options) => { calls.push({ path, body: JSON.parse(options.body) }); return confirmedTask; } });
     const project = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', audit = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     try {
         await runSeo(['audit', project, '--pages', '5', '--browser-pages', '1', '--gate', '--changed', '--baseline', audit]);
@@ -67,12 +68,140 @@ test('hosted tasks retain bounds, selected model and idempotency', async () => {
         ApiClient.create = original;
     }
 });
+test('audit, verification and remediation retain the complete request after an ambiguous failure', async () => {
+    const original = ApiClient.create;
+    const project = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', audit = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const identity = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const commands = [
+        ['audit', project, '--pages', '5', '--browser-pages', '1', '--gate', '--changed', '--baseline', audit],
+        ['verify', project, audit, '--gate', '--paths', '/,/docs'],
+        ['remediate', project, audit, '--model', 'customer-model', '--max-units', '12', '--findings', 'a'.repeat(64)],
+    ];
+    try {
+        for (const command of commands) {
+            const calls = [];
+            ApiClient.create = async () => ({ request: async (path, options) => {
+                    calls.push({ path, body: JSON.parse(options.body) });
+                    if (calls.length === 1)
+                        throw new CliError('Response lost.', EXIT.network, 'network_error', ['Transport request ID: transport-only']);
+                    return confirmedTask;
+                } });
+            await assert.rejects(runSeo([...command, '--request-id', identity]), error => {
+                assert.ok(error instanceof CliError);
+                assert.equal(error.code, 'network_error');
+                assert.equal(error.exitCode, EXIT.network);
+                assert.ok(error.details.includes('Transport request ID: transport-only'));
+                assert.ok(error.details.includes(`SEO request ID: ${identity}`));
+                assert.match(error.details.join(' '), new RegExp(`unchanged command with --request-id ${identity}`));
+                return true;
+            });
+            await runSeo([...command, '--request-id', identity]);
+            assert.equal(calls.length, 2);
+            assert.deepEqual(calls[1], calls[0]);
+            assert.equal(calls[0].body.client_request_id, identity);
+            if (command[0] === 'remediate') {
+                assert.equal(calls[0].body.model, 'customer-model');
+                assert.equal(calls[0].body.maximum_units, 12);
+            }
+        }
+    }
+    finally {
+        ApiClient.create = original;
+    }
+});
+test('a generated SEO request ID is recoverable after a lost response', async () => {
+    const original = ApiClient.create, calls = [];
+    const project = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    ApiClient.create = async () => ({ request: async (_path, options) => {
+            calls.push(JSON.parse(options.body));
+            if (calls.length === 1)
+                throw new CliError('Response lost.', EXIT.network, 'network_error');
+            return confirmedTask;
+        } });
+    try {
+        let identity = '';
+        await assert.rejects(runSeo(['audit', project, '--pages', '5']), error => {
+            assert.ok(error instanceof CliError);
+            identity = error.details.find(detail => detail.startsWith('SEO request ID: '))?.slice('SEO request ID: '.length) ?? '';
+            assert.match(identity, /^[a-f0-9-]{36}$/);
+            return true;
+        });
+        await runSeo(['audit', project, '--pages', '5', '--request-id', identity]);
+        assert.deepEqual(calls[1], calls[0]);
+    }
+    finally {
+        ApiClient.create = original;
+    }
+});
+test('malformed hosted acknowledgements expose the original request ID for an unchanged valid retry', async () => {
+    const original = ApiClient.create;
+    const project = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', audit = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const commands = [
+        ['audit', project, '--pages', '5', '--browser-pages', '1', '--gate', '--changed', '--baseline', audit],
+        ['verify', project, audit, '--gate', '--paths', '/,/docs'],
+        ['remediate', project, audit, '--model', 'customer-model', '--max-units', '12', '--findings', 'a'.repeat(64)],
+    ];
+    const privateBody = 'private-response-content';
+    const malformed = [null, undefined, {}, { status: 'queued', privateBody }, { id: 7, privateBody }, { id: null, privateBody }, { id: privateBody }, [], Object.assign([], { id: confirmedTask.id }), privateBody];
+    try {
+        for (const command of commands) {
+            for (const response of malformed) {
+                const calls = [];
+                ApiClient.create = async () => ({ request: async (path, options) => {
+                        calls.push({ path, body: JSON.parse(options.body) });
+                        return calls.length === 1 ? response : confirmedTask;
+                    } });
+                let identity = '';
+                await assert.rejects(runSeo([...command]), error => {
+                    assert.ok(error instanceof CliError);
+                    assert.equal(error.code, 'seo_response_invalid');
+                    assert.equal(error.exitCode, EXIT.remote);
+                    identity = error.details.find(detail => detail.startsWith('SEO request ID: '))?.slice('SEO request ID: '.length) ?? '';
+                    assert.equal(identity, calls[0].body.client_request_id);
+                    assert.match(identity, /^[a-f0-9-]{36}$/);
+                    assert.ok(error.details.includes(`If submission is uncertain, retry the unchanged command with --request-id ${identity}.`));
+                    assert.doesNotMatch([error.message, ...error.details].join(' '), new RegExp(privateBody));
+                    return true;
+                });
+                assert.equal(calls.length, 1);
+                assert.deepEqual(await runSeo([...command, '--request-id', identity]), confirmedTask);
+                assert.equal(calls.length, 2);
+                assert.deepEqual(calls[1], calls[0]);
+            }
+        }
+    }
+    finally {
+        ApiClient.create = original;
+    }
+});
+test('malformed, missing and repeated SEO request IDs fail before auth or network', async () => {
+    const original = ApiClient.create;
+    let calls = 0;
+    ApiClient.create = async () => { calls++; throw new Error('Unexpected authentication.'); };
+    const project = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', audit = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const commands = [['audit', project], ['verify', project, audit], ['remediate', project, audit, '--model', 'customer-model', '--max-units', '12', '--findings', 'a'.repeat(64)]];
+    try {
+        for (const command of commands) {
+            for (const flags of [['--request-id'], ['--request-id', 'not-a-uuid'], ['--request-id', '--gate'], ['--request-id', audit, '--request-id', audit]]) {
+                await assert.rejects(runSeo([...command, ...flags]), error => error instanceof CliError && error.code === 'seo_request_id_invalid' && error.exitCode === EXIT.usage);
+            }
+        }
+        assert.equal(calls, 0);
+    }
+    finally {
+        ApiClient.create = original;
+    }
+});
 test('CLI help and local gates work through the distributable entry point', async () => {
     const cli = join(process.cwd(), 'dist', 'cli.js');
     const help = spawnSync(process.execPath, [cli, 'seo', '--help', '--json'], { encoding: 'utf8' });
     assert.equal(help.status, EXIT.success);
     assert.equal(help.stderr, '');
-    assert.equal(JSON.parse(help.stdout).data.topic.name, 'seo');
+    const topic = JSON.parse(help.stdout).data.topic;
+    assert.equal(topic.name, 'seo');
+    for (const action of ['audit', 'verify', 'remediate'])
+        assert.ok(topic.usage.some((line) => line.startsWith(`blinkhost seo ${action} `) && line.includes('--request-id REQUEST_UUID')));
+    assert.match(topic.details.join(' '), /same UUID and unchanged inputs/);
     const dir = await mkdtemp(join(tmpdir(), 'seo-cli-gate-'));
     try {
         for (const [html, exit] of [['', EXIT.validation], [good, EXIT.success]]) {
