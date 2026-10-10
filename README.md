@@ -7,13 +7,61 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.5.2
+npm install --global @blinkhost/cli@2.6.0
 blinkhost --version
 ```
 
 Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verification bundle are available at <https://github.com/blinkhost-ltd/blinkhost-cli/releases>.
 
-## Current release
+## 2.6.0 — SEO and AEO commands
+
+Run `blinkhost seo local ./out --gate --json` to check local HTML metadata,
+or `blinkhost seo audit PROJECT_UUID --pages 10 --json` for a hosted audit.
+Use `blinkhost seo findings PROJECT_UUID AUDIT_UUID --json` until the audit is
+terminal, then inspect its coverage and gate. `blinkhost seo --help` lists
+verification, imports, reports and selected-model Idam remediation commands.
+Hosted access requires an enabled server and an existing subscription allowance.
+Upgrade from 2.5.2 to use these commands.
+
+The same release adds these workflows:
+
+| Workflow | Commands |
+| --- | --- |
+| Public deployment documentation | `content-status`, `content-index`, `content-search`, `content-result`, `content-delete` |
+| Selected-model answer experiments | `sample`, `samples`, `sample-result`, `sample-delete` |
+| Prepaid Azure public research | `research-status`, `research`, `research-result`, `research-cancel` |
+| Owner search reports | `import-native PROJECT_UUID FORMAT EXPORT_FILE PROVENANCE.json` |
+
+Search, sample and research submissions read a JSON request file. Give each new
+request a UUID in `client_request_id`, retain that file when recovering a lost
+response, and poll the returned ID. For example, `content-search` accepts:
+
+```json
+{"client_request_id":"b3af715d-7276-42b7-908c-ea8c59ef019e","query":"How do I deploy?","count":5,"locale":"en"}
+```
+
+`sample` accepts `model`, `maximum_units`, `question`, one to five public `paths`
+and `required_facts`, alongside the request UUID. The chosen permitted model uses
+ordinary Idam and its AI wallet. Results show documentation support and missing
+facts for that experiment; they do not establish visibility in external AI apps.
+
+`research` requires all six fields:
+
+```json
+{"client_request_id":"8bfb3b6c-3b0a-41fd-80d7-af6879fb4036","model":"YOUR_PERMITTED_MODEL","maximum_units":100,"query":"Public documentation about sitemap indexes","max_reads":1,"public_query_consent":true}
+```
+
+Use `research-status` to inspect available prepaid USD and the per-read hold.
+Ordinary Idam model work uses the AI wallet; Azure public search and its grounding
+model use the separate research allowance funded by verified checkout. Cancelling
+prevents future reads; already sent reads still settle their actual cost.
+
+Native imports accept `google-search-console-csv`, `google-search-console-zip`
+and `bing-webmaster-csv`. Supply the authorized property, reporting period and
+other provenance in the separate JSON file. The server validates report ownership
+and supported dimensions before retaining it.
+
+## Earlier releases
 
 ### 2.5.2 — deployment request recovery
 
@@ -230,6 +278,23 @@ blinkhost help create
 ```
 
 `quickstart` is local, read-only, and makes no network requests. It checks Node.js, Git, the operating-system credential service, the selected directory, and any existing BlinkHost manifest. It never signs in, uploads source, creates a cloud resource, or incurs usage. The bundled `docs` reference is offline and matches the installed CLI version; use the linked web documentation for longer guides.
+
+## SEO and AEO request retries
+
+Hosted audits, verification and Idam remediation accept `--request-id REQUEST_UUID`:
+
+```bash
+blinkhost seo audit PROJECT_UUID --pages 100 --request-id REQUEST_UUID
+blinkhost seo verify PROJECT_UUID AUDIT_UUID --request-id REQUEST_UUID
+blinkhost seo remediate PROJECT_UUID AUDIT_UUID --model MODEL --max-units 100 --findings FINDING_KEY --request-id REQUEST_UUID
+```
+
+Choose a UUID for each new task and keep it with the command. After a timeout or
+lost response, retry the same command with the same UUID and unchanged inputs.
+This lets the server reuse the original task and wallet hold. Changing the model,
+wallet limit, findings or audit options requires a fresh UUID for a new task.
+If omitted, the CLI generates an ID and includes it as `SEO request ID` in a
+submission error, so you can supply it with `--request-id` when retrying.
 
 ## Connect an account
 
