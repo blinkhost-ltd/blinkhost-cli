@@ -2,6 +2,15 @@
 
 This file records customer-visible CLI changes. BlinkHost uses semantic versioning for the CLI, while security and migration impact are classified separately. A patch may therefore require prompt action, and a major release may coexist with an earlier supported line during its documented migration window.
 
+## 2.7.0 — UI and design references
+
+Adds `design list`, `design search`, `design show` and `design notices` for
+reviewed UI guidance and source references. Search accepts framework and result
+limits plus an optional ready image upload. Reads are bound to the accessible
+project workspace and immutable reference revision. Returned notices accompany
+adapted source without requiring a public badge. The commands are read-only and
+retain server authorization, subscription and availability checks.
+
 ## 2.6.0 — SEO and AEO commands
 
 Adds `seo local`, hosted audits and findings, baseline verification, cancellation,

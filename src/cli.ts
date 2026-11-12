@@ -20,6 +20,7 @@ import { ApiClient } from './api.js';
 import { login, logout } from './auth.js';
 import { runAssistant } from './assistant.js';
 import { runSeo } from './seo.js';
+import { runDesign } from './design.js';
 import { exportProject } from './project-export.js';
 import { activeProfile, readConfig, validateProfileName, writeConfig } from './config.js';
 import { openPreview, projectStatus, rawApi, readProjectLink, runFunctions, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
@@ -278,6 +279,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     else if (command === 'doctor') await commandDoctor(args, json);
     else if (command === 'test') { const data = await testProject(args, json); emit({ ok: true, command, message: 'Project checks passed.', data }, json); }
     else if (command === 'ai') { const result = await runAssistant(args, profile); emit({ ok: true, command: 'ai', ...result }, json); }
+    else if (command === 'design') { const data = await runDesign(args, profile); emit({ ok: true, command, message: 'Design references loaded. Adapt to the project and retain source notices.', data }, json); }
     else if (command === 'seo') {
       const data = await runSeo(args, profile);
       emit({ ok: true, command, message: 'SEO evidence loaded.', data }, json);
