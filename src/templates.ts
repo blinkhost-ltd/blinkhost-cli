@@ -1,4 +1,5 @@
 import type { BlinkHostManifest, FrontendFramework, ModuleLanguage, PackageManager } from './manifest.js';
+import { addLocalTestStarters } from './local-test-starters.js';
 
 export interface ScaffoldModule { name: string; language: ModuleLanguage }
 export interface ScaffoldOptions {
@@ -7,6 +8,7 @@ export interface ScaffoldOptions {
   packageManager: PackageManager;
   modules: ScaffoldModule[];
   database?: string;
+  tests?: boolean;
 }
 export interface Scaffold { manifest: BlinkHostManifest; files: Map<string, string> }
 
@@ -109,13 +111,14 @@ export function createScaffold(options: ScaffoldOptions): Scaffold {
     for (const [path, contents] of generated.files) files.set(path, contents);
     modules.push({ name: item.name, path: `_server_islands/${item.name}`, language: item.language, entrypoint: generated.entrypoint, abi: 'blinkhost-wasi-1', sdk: '1.1.0' });
   }
+  if (options.tests) addLocalTestStarters(files, options);
   const databases = options.database ? [{ binding: options.database, schema: `database/${options.database}/schema.sql`, migrations: `database/${options.database}/migrations` }] : [];
   if (options.database) {
     files.set(`database/${options.database}/schema.sql`, '-- Keep the current reviewable schema here.\n');
     files.set(`database/${options.database}/migrations/README.md`, 'Add ordered, forward-only SQL migrations in this directory.\n');
   }
   files.set('.gitignore', 'node_modules/\ndist/\n.env\n.env.*\n!.env.example\n.blinkhost/\n');
-  files.set('README.md', `# ${options.name}\n\nCreated with the BlinkHost CLI. Run \`blinkhost validate\` before connecting this repository.\n`);
+  files.set('README.md', `# ${options.name}\n\nCreated with the BlinkHost CLI. Run \`blinkhost validate\` before connecting this repository.\n${options.tests ? '\nRun `blinkhost test . --json` before preview; see [TESTING.md](TESTING.md).\n' : ''}`);
   return {
     manifest: {
       schema: 'blinkhost/v1', application: { root: '.' },

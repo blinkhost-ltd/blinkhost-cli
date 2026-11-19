@@ -2,6 +2,10 @@
 
 This file records customer-visible CLI changes. BlinkHost uses semantic versioning for the CLI, while security and migration impact are classified separately. A patch may therefore require prompt action, and a major release may coexist with an earlier supported line during its documented migration window.
 
+## 2.8.0 — Local application testing and logs
+
+Generate runnable test starters with `blinkhost create --tests` and run a project's configured checks with `blinkhost test`. On Linux, `blinkhost dev --local-config` can serve a compiled backend, libSQL database and static frontend using your local toolchain. Use `blinkhost logs` to filter application events, follow new entries, and export structured records. Module build and release diagnostics now explain preparation failures.
+
 ## 2.7.0 — UI and design references
 
 Adds `design list`, `design search`, `design show` and `design notices` for

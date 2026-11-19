@@ -22,6 +22,8 @@ jobs:
         with:
           node-version: '22.18.0'
           cache: npm
+      - name: Prepare native application test tools
+        uses: ./.github/actions/native-test-tools
       - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62
         with:
           cosign-release: v2.4.3
@@ -45,9 +47,29 @@ jobs:
           sha256sum "${artifact}" "${artifact%.tgz}.sbom.cdx.json" > SHA256SUMS
           echo "artifact=${artifact}" >> "$GITHUB_OUTPUT"
           echo "sbom=${artifact%.tgz}.sbom.cdx.json" >> "$GITHUB_OUTPUT"
+      - name: Prepare the qualified local runtime checksum
+        id: runtime
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          file="release/local-runtime-${RELEASE_TAG}.SHA256SUMS"
+          if [[ "$RELEASE_TAG" == v2.8.0 ]]; then test -f "$file"; fi
+          if [[ -f "$file" ]]; then
+            name="blinkhost-local-runtime-${version}-linux-x86_64.tar.gz"
+            [[ "$(wc -l < "$file")" -eq 1 ]]
+            digest="$(cut -d ' ' -f1 "$file")"
+            [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+            printf '%s  %s\n' "$digest" "$name" | cmp - "$file"
+            cp "$file" local-runtime.SHA256SUMS
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          fi
       - name: Sign release evidence with Sigstore
         run: |
           cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+          if [[ -f local-runtime.SHA256SUMS ]]; then
+            cosign sign-blob --yes --bundle local-runtime.SHA256SUMS.sigstore.json local-runtime.SHA256SUMS
+          fi
       - name: Publish package to npm
         env:
           ARTIFACT: ${{ steps.package.outputs.artifact }}
@@ -66,15 +88,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.package.outputs.artifact }}
           SBOM: ${{ steps.package.outputs.sbom }}
+          LOCAL_RUNTIME: ${{ steps.runtime.outputs.available }}
         run: |
+          assets=("${ARTIFACT}" "${SBOM}" SHA256SUMS SHA256SUMS.sigstore.json)
+          if [[ "$LOCAL_RUNTIME" == true ]]; then
+            assets+=(local-runtime.SHA256SUMS local-runtime.SHA256SUMS.sigstore.json)
+          fi
           if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            expected="${ARTIFACT}\n${SBOM}\nSHA256SUMS\nSHA256SUMS.sigstore.json"
+            expected="$(printf '%s\n' "${assets[@]}" | sort)"
             actual="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name' | sort)"
-            test "$(printf '%b' "${expected}" | sort)" = "${actual}"
+            test "$expected" = "$actual"
+            if [[ "$LOCAL_RUNTIME" == true ]]; then
+              readback="$(mktemp -d)"
+              gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                --dir "$readback" --pattern 'local-runtime.SHA256SUMS*'
+              cmp local-runtime.SHA256SUMS "$readback/local-runtime.SHA256SUMS"
+              cosign verify-blob --bundle "$readback/local-runtime.SHA256SUMS.sigstore.json" \
+                --certificate-identity "https://github.com/$GITHUB_WORKFLOW_REF" \
+                --certificate-oidc-issuer https://token.actions.githubusercontent.com "$readback/local-runtime.SHA256SUMS"
+            fi
             echo "Release assets already exist; safe workflow re-run detected."
           else
             gh release create "${GITHUB_REF_NAME}" \
-              "${ARTIFACT}" "${SBOM}" SHA256SUMS SHA256SUMS.sigstore.json \
+              "${assets[@]}" \
               --repo "${GITHUB_REPOSITORY}" \
               --verify-tag \
               --generate-notes \

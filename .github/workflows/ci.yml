@@ -23,6 +23,8 @@ jobs:
         with:
           node-version: '22.18.0'
           cache: npm
+      - name: Prepare native application test tools
+        uses: ./.github/actions/native-test-tools
       - name: Install without lifecycle scripts
         run: npm ci --ignore-scripts
       - name: Test security and project contracts
