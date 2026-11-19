@@ -1,0 +1,56 @@
+{
+  "response": {
+    "schema_version": 1,
+    "kind": "recorded_attempt_failures",
+    "deployment_id": "101",
+    "project_id": "00000000-0000-4000-8000-000000000001",
+    "release_digest": "8f15fab7cae143a34263777f5cf5c8764865d892084cc6a7bbb81b4a160d7e4a",
+    "backend_modules_digest": "b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec",
+    "state": "available",
+    "serving_readiness": "not_evaluated",
+    "attempts": [
+      {
+        "schema_version": 1,
+        "state": "failed_preparation",
+        "preparation_id": "00000000-0000-4000-8000-000000000002",
+        "request_id": "00000000-0000-4000-8000-000000000003",
+        "project_id": "00000000-0000-4000-8000-000000000001",
+        "release_digest": "8f15fab7cae143a34263777f5cf5c8764865d892084cc6a7bbb81b4a160d7e4a",
+        "portable_sha256": "91e468bd604f933db637bd6cacf528df50821ca604240dd7cfef7ad0c830e1dc",
+        "portable_size_bytes": 9,
+        "failure_diagnostic": {
+          "schema_version": 1,
+          "stage": "native_preparation",
+          "code": "native_preparation_memory_exceeded",
+          "responsibility": "platform",
+          "resource": "compiler_memory",
+          "unit": "bytes",
+          "limit": 8589934592,
+          "observed": 4096,
+          "measurement": "sampled_peak",
+          "remediation": "contact_support"
+        },
+        "module_id": "00000000-0000-4000-8000-000000000004",
+        "module_name": "api",
+        "recorded_at": "2025-01-01T00:00:00.000000+00:00"
+      }
+    ],
+    "truncated": false
+  },
+  "release": {
+    "id": "101",
+    "artifact_digest": "8f15fab7cae143a34263777f5cf5c8764865d892084cc6a7bbb81b4a160d7e4a",
+    "backend_modules_digest": "b5790eaab58e675da4a3732b7a53afea7b61c87bc3810b06772c64fae9f986ec",
+    "environment": {
+      "root_project_id": "00000000-0000-4000-8000-000000000001"
+    },
+    "backend_modules_snapshot": [
+      {
+        "module_id": "00000000-0000-4000-8000-000000000004",
+        "name": "api",
+        "artifact_digest": "91e468bd604f933db637bd6cacf528df50821ca604240dd7cfef7ad0c830e1dc",
+        "artifact_size_bytes": 9
+      }
+    ]
+  }
+}

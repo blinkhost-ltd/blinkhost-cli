@@ -1,0 +1,15 @@
+{
+  "schema": "blinkhost.local-stack/v1",
+  "runtime": { "path": "./tools/local_backend_module", "sha256": "REPLACE_WITH_VERIFIED_RUNTIME_SHA256" },
+  "engine": { "path": "./tools/wasmedge/lib64/libwasmedge.so", "sha256": "REPLACE_WITH_VERIFIED_ENGINE_SHA256" },
+  "database": {
+    "executable": { "path": "./tools/sqld", "sha256": "REPLACE_WITH_VERIFIED_SQLD_SHA256" },
+    "setup": [
+      { "sql": "CREATE TABLE local_customer(id INTEGER PRIMARY KEY, value TEXT NOT NULL)" },
+      { "sql": "INSERT INTO local_customer(id,value) VALUES(1,?1)", "args": [{ "type": "text", "value": "tenant-a-original" }] }
+    ]
+  },
+  "artifact": { "path": "./artifact.wasm", "sha256": "REPLACE_WITH_VERIFIED_PORTABLE_ARTIFACT_SHA256" },
+  "frontend": "./frontend",
+  "limits": { "max_concurrent": 4, "request_timeout_ms": 30000 }
+}

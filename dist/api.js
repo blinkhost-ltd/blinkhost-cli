@@ -5,6 +5,8 @@ import { withCredentialLock } from './credential-lock.js';
 import { validateDeviceTokens } from './device-flow.js';
 import { CliError, EXIT } from './errors.js';
 import { VERSION } from './version.js';
+import { isModuleBuildPath, moduleBuildRejectionGuidance, readModuleBuildRejection, moduleBuildRequestId } from './module-build-diagnostics.js';
+import { isPreparationDiagnosticsRead, readPreparationDiagnosticsResponse } from './release-preparation-diagnostics.js';
 const REQUEST_TIMEOUT_MS = 30_000;
 // Only locally written guidance may reach terminal output. Never echo server
 // details, filenames or arbitrary codes from a source-export error response.
@@ -68,16 +70,54 @@ function messageFrom(payload, fallback) {
     }
     return fallback;
 }
-async function parseResponse(response) {
+async function parseResponse(response, responseLimit) {
     if (response.status === 204)
         return null;
     const type = response.headers.get('content-type') || '';
+    if (responseLimit !== undefined) {
+        const length = response.headers.get('content-length');
+        const reader = response.body?.getReader();
+        try {
+            if (length !== null && (!/^\d+$/.test(length) || Number(length) > responseLimit)) {
+                throw new CliError('The API response exceeds the bounded log-read limit.', EXIT.remote, 'response_too_large');
+            }
+            const chunks = [];
+            let size = 0;
+            if (reader)
+                while (true) {
+                    const chunk = await reader.read();
+                    if (chunk.done)
+                        break;
+                    size += chunk.value.byteLength;
+                    if (size > responseLimit)
+                        throw new CliError('The API response exceeds the bounded log-read limit.', EXIT.remote, 'response_too_large');
+                    chunks.push(chunk.value);
+                }
+            const text = Buffer.concat(chunks, size).toString('utf8');
+            if (type.includes('application/json')) {
+                try {
+                    return JSON.parse(text);
+                }
+                catch {
+                    throw new CliError('The API returned invalid log JSON.', EXIT.remote, 'invalid_log_response');
+                }
+            }
+            return text;
+        }
+        finally {
+            await reader?.cancel().catch(() => undefined);
+            reader?.releaseLock();
+        }
+    }
     if (type.includes('application/json'))
         return response.json();
     const text = await response.text();
     return text.length <= 1024 * 1024 ? text : `${text.slice(0, 1024 * 1024)}\n[truncated]`;
 }
-export async function publicRequest(apiOrigin, path, init = {}) {
+export async function publicRequest(apiOrigin, path, init = {}, responseLimit) {
+    if (responseLimit !== undefined && (!Number.isSafeInteger(responseLimit) || responseLimit < 1 || responseLimit > 16 * 1024 * 1024)) {
+        throw new CliError('Invalid bounded response size.', EXIT.usage, 'invalid_response_limit');
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
@@ -88,10 +128,13 @@ export async function publicRequest(apiOrigin, path, init = {}) {
         const response = await fetch(new URL(path, `${apiOrigin}/`), {
             ...init,
             redirect: 'error',
-            signal: controller.signal,
+            signal: init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal,
             headers,
         });
-        return { response, data: await parseResponse(response) };
+        return { response, data: responseLimit !== undefined && (!init.method || init.method === 'GET') && isPreparationDiagnosticsRead(path)
+                ? await readPreparationDiagnosticsResponse(response, responseLimit)
+                : !response.ok && isModuleBuildPath(path)
+                    ? await readModuleBuildRejection(response) : await parseResponse(response, responseLimit) };
     }
     catch (error) {
         if (error instanceof CliError)
@@ -263,18 +306,24 @@ export class ApiClient {
             clearTimeout(timeout);
         }
     }
-    async request(path, init = {}) {
+    async request(path, init = {}, responseLimit) {
         const headers = new Headers(init.headers);
         headers.set('Authorization', `Bearer ${this.accessToken}`);
         const requestId = headers.get('X-Request-ID') || randomUUID();
         headers.set('X-Request-ID', requestId);
         if (init.method && init.method !== 'GET' && !headers.has('Idempotency-Key'))
             headers.set('Idempotency-Key', randomUUID());
-        const result = await publicRequest(this.profile.apiOrigin, path, { ...init, headers });
+        const result = await publicRequest(this.profile.apiOrigin, path, { ...init, headers }, responseLimit);
         if (!result.response.ok) {
             const exit = result.response.status === 401 || result.response.status === 403 ? EXIT.auth : result.response.status === 409 ? EXIT.conflict : EXIT.remote;
-            const responseId = result.response.headers.get('x-request-id') || requestId;
-            throw new CliError(messageFrom(result.data, `BlinkHost returned HTTP ${result.response.status}.`), exit, `api_${result.response.status}`, [`Request ID: ${responseId}`]);
+            const buildRequest = isModuleBuildPath(path);
+            const diagnosticRead = responseLimit !== undefined && (!init.method || init.method === 'GET') && isPreparationDiagnosticsRead(path);
+            const responseId = buildRequest || diagnosticRead ? moduleBuildRequestId(result.response.headers.get('x-request-id'), requestId)
+                : result.response.headers.get('x-request-id') || requestId;
+            const fallback = `BlinkHost returned HTTP ${result.response.status}.`;
+            const message = buildRequest ? (result.response.status === 409 ? moduleBuildRejectionGuidance(result.data) : undefined) || fallback
+                : diagnosticRead ? fallback : messageFrom(result.data, fallback);
+            throw new CliError(message, exit, `api_${result.response.status}`, [`Request ID: ${responseId}`]);
         }
         return result.data;
     }

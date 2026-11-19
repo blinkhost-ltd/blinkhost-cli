@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { ApiClient, encodeQuery } from './api.js';
 import { CliError, EXIT } from './errors.js';
 import { resolveLocalPath } from './project.js';
+import { loadReleasePreparationDiagnostics } from './release-preparation-diagnostics.js';
 
 const COLLECTIONS: Record<string, string> = {
   projects: '/api/sites/',
@@ -119,6 +120,16 @@ export async function runRemote(group: string, input: string[], profile?: string
     ? publicationKey(publicationKeyOption) : undefined;
   if (publicationKeyOption !== undefined && key === undefined) {
     throw new CliError('--idempotency-key is supported here only for activate, promote, retry and rollback.', EXIT.usage, 'unexpected_argument');
+  }
+  if (group === 'deployments' && action === 'preparation-diagnostics') {
+    const id = args.shift();
+    if (!id || /^[1-9]\d{0,18}$/.exec(id)?.[0] !== id
+      || !project || /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.exec(project)?.[0] !== project) {
+      throw new CliError('Use deployments preparation-diagnostics DEPLOYMENT_ID --project PROJECT_UUID.', EXIT.usage, 'invalid_preparation_scope');
+    }
+    if (query.length || dataOption !== undefined) throw new CliError('Preparation history accepts only its release and project IDs.', EXIT.usage, 'unexpected_argument');
+    noExtra(args);
+    return loadReleasePreparationDiagnostics(await ApiClient.create(profile), id, project);
   }
   const client = await ApiClient.create(profile);
   const base = collectionPath(group, project);
@@ -343,6 +354,7 @@ export async function rawApi(input: string[], profile?: string): Promise<unknown
   const parsed = new URL(path, 'https://api.blinkhost.me');
   if (!parsed.pathname.startsWith('/api/') || parsed.pathname.includes('/../') || parsed.pathname.startsWith('/api/internal/') || parsed.pathname.startsWith('/api/ops/') || parsed.pathname.startsWith('/api/auth/')) throw new CliError('Internal, staff, and authentication API paths are unavailable.', EXIT.usage, 'invalid_api_path');
   if (method !== 'GET' && parsed.pathname.startsWith('/api/project-secrets/')) throw new CliError('Use the dedicated `blinkhost secrets` commands so values never enter shell history.', EXIT.usage, 'unsafe_secret_command');
+  if (method !== 'GET' && parsed.pathname.startsWith('/api/source-control/test-credential-fixtures/')) throw new CliError('Use `blinkhost test-credentials` with --stdin for test credential writes.', EXIT.usage, 'unsafe_secret_command');
   const client = await ApiClient.create(profile);
   return client.request(path, { method, ...(method === 'GET' ? {} : { body: JSON.stringify(data) }) });
 }

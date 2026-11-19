@@ -1,0 +1,36 @@
+{
+  "providers": {
+    "email": {
+      "routes": [{
+        "method": "POST",
+        "path": "/send",
+        "request_sha256": "a1fc390f121787025c46673119fa7502d2c038615d9e716b601fb9f466b14c94",
+        "responses": [
+          { "status": 429, "headers": { "retry-after": "1" }, "body": "{\"error\":\"limited\"}" },
+          { "status": 202, "body": "{\"id\":\"local-send\"}" }
+        ]
+      }]
+    },
+    "payment": {
+      "routes": [{
+        "method": "POST",
+        "path": "/charge",
+        "responses": [{ "status": 402, "body": "{\"error\":\"declined\"}" }]
+      }]
+    },
+    "ai": {
+      "routes": [{
+        "method": "POST",
+        "path": "/chat",
+        "responses": [{
+          "status": 200,
+          "headers": { "content-type": "text/event-stream" },
+          "chunks": [
+            { "body": "data: {\"token\":\"hello\"}\n\n" },
+            { "body": "data: [DONE]\n\n", "delay_ms": 20 }
+          ]
+        }]
+      }]
+    }
+  }
+}

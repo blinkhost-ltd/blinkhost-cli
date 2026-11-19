@@ -7,7 +7,7 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.7.0
+npm install --global @blinkhost/cli@2.8.0
 blinkhost --version
 ```
 
@@ -160,6 +160,11 @@ Read/list needs `ai:read`, preparation needs `ai:execute`, and approval needs
 usage—not AI credits. It does not publish, promote an artifact or commit files.
 Unsaved edits are excluded. After a timeout, use
 `ai build-status REVIEW_UUID --project PROJECT_UUID` before any further action;
+when a confirmed portable-size rejection includes validated measurements, this
+command shows the observed lower bound, the admitted maximum in bytes, and
+guidance to reduce bundled code or dependencies. Checking status never retries
+the build. Older build receipts retain their existing status behavior; malformed
+measurements do not become size or plan-upgrade advice.
 do not create a new review to repeat an uncertain build. See `blinkhost docs ai`.
 These commands require current Idam access and an available module compiler.
 
@@ -371,6 +376,92 @@ Supported frontends are Astro, HTML, React, Solid, Svelte, and Vue. Backend modu
 blinkhost init apps/storefront --dry-run --json
 ```
 
+On x86-64 Ubuntu 24.04 with OpenSSL 3, the optional local stack can run libSQL,
+your compiled WASM module and a static frontend together. Install the BlinkHost
+local runtime and its matching WasmEdge library. The archive's SHA-256 digest is
+`0a2d5f854e5036bde362d3d950763593542217d5ba530786595d70168e7925ec`.
+Use the signed checksum list and verification command in the packaged guide.
+[BlinkHost local runtime](https://github.com/blinkhost-ltd/blinkhost-cli/releases/tag/local-runtime-v2.8.0) · [CLI v2.8.0 signed checksums](https://github.com/blinkhost-ltd/blinkhost-cli/releases/tag/v2.8.0)
+The ordinary frontend development command and native project tests can run
+independently of those binaries.
+
+```bash
+mkdir -p local-data
+blinkhost dev . --local-config blinkhost.local.json --state-dir local-data/run-001 --json
+```
+
+Both options are required. Application validation happens first; configuration
+paths resolve against the application and input paths against the configuration
+file. Use the packaged `dist/local-development/blinkhost.local.example.json`
+as your template. Supply verified SHA-256 digests for your separate local runtime,
+WasmEdge 0.18.1 library, libSQL 0.24.32 executable and compiled portable artifact.
+For a first module, the packaged local development guide includes a complete Rust
+HTTP handler and the stock Rust command to compile it. [Build your first portable backend module](./dist/local-development/README.md#build-your-first-portable-backend-module)
+The CLI archive includes the orchestration code; it does not download toolchains.
+The state directory must be new, have an existing parent and sit outside the
+served frontend. Data and bounded private evidence remain there after shutdown.
+
+Local stack mode chooses loopback ports, so omit `--host` and `--port`. It uses
+the Free local profile: 128 MiB guest memory, a 20,000,000-byte portable
+allowance and a request budget of at most 30 seconds. Explicit setup SQL applies
+your schema/fixtures to the local database. Native DEFAULT operations require
+`database.native` with explicit `read`, `write` and `transaction` booleans, plus a
+local runtime built with `--features customer-local-database`. At least one grant
+must be true; omission keeps native operations disabled. The readiness record
+provides the generated database/generation scope for SDK calls. The packaged
+local-development README documents receipts, rollback and permission behavior.
+The frontend serves built/static files. `--watch-artifact` can reload separately
+compiled artifacts; coverage uses separate tooling.
+
+To compile source once before starting the local stack, also pass
+`--local-build-config blinkhost.build.json`. This optional Linux workflow runs
+your pinned compiler wrapper against an explicit source-file snapshot, checks
+that its inputs stayed unchanged, and gives the resulting portable artifact to
+the same WasmEdge/libSQL stack. Its new state directory contains `build-001/`,
+`compiled-stack.json` and `stack/`. The original configuration stays intact.
+See the packaged local-development README for the build schema, limits and
+compiler environment. Prepare the matching SDK/compiler/dependencies first;
+this option does not install dependencies. Add `--watch-source` to rebuild when
+the declared source files change. Rebuilds run serially and retain private build
+receipts; compiler or runtime admission failures keep the working module.
+Watching stops after 32 rebuilds or 64 normal events, with an explicit final
+event. Changes to build or stack configuration require a fresh run. Source
+watching cannot be combined with `--watch-artifact`; AOT and coverage use
+separate tooling.
+
+Optional `providers` in the local configuration start customer-owned loopback
+fixtures for email, payments or AI. Define exact method/path routes and ordered
+responses, including failures, delays and SSE chunks. Read their URLs from
+`provider_fixtures` in the readiness record and supply them to your application's
+native integration tests or provider adapters. They use no real provider or
+internal BlinkHost service. Declaring fixtures leaves guest outbound permissions
+disabled. Guest access requires the runtime feature `customer-local-providers`
+and an explicit `provider_permissions` grant naming the declared fixtures and
+module. The owner pins that grant to the artifact digest and exact loopback
+listeners; see the packaged README. Shutdown keeps
+private `provider-fixtures.json` with bounded counters and body digests, excluding
+request payloads and headers. See the packaged
+`dist/local-development/README.md` for configuration examples and limits.
+
+JSON mode emits a readiness record with the actual service origins, followed by
+a final result on shutdown. Ctrl-C/SIGTERM after readiness stop owned processes
+and exit zero; interrupted startup and unexpected process failures exit nonzero.
+Readiness delivery is bounded to three seconds and final delivery to one second.
+A broken or stalled output write stops owned processes; incomplete output fails
+the command. An idle pipe disconnect may be detected only at the next write.
+Local development performs no BlinkHost account or update API requests.
+
+The locally qualified Linux profile uses WasmEdge 0.18.1, libSQL 0.24.32 and
+the configured 128 MiB Free resource contract. Representative compiled
+JavaScript, TypeScript, Python, Go and Rust modules have passed HTTP/database
+and Chromium frontend checks, migrations/seeds/reset, isolated native
+transactions, explicit provider grants, cancellation, and source build/watch
+through the installed CLI. Shutdown checks cover only processes started by
+that local run; retained databases and evidence stay in its state directory.
+These results cover portable WASM and deterministic local providers. Toolchain
+installation, AOT preparation, live provider behavior, production routing and
+performance/capacity qualification have separate workflows.
+
 `init` writes only `blinkhost.yaml`, refuses an existing manifest unless `--force` is explicitly supplied, and never rewrites application source. It proposes only safe module declarations already present under `_server_islands`; review them and add other intended modules explicitly. One manifest describes one deployable application. In a monorepo, select the application directory, or place the manifest at a build-context root that contains the app and its shared workspace packages; use separate BlinkHost projects for independently deployable apps.
 
 Creation is atomic and refuses to replace an existing path. Dependency lifecycle scripts are disabled. Validation rejects unknown manifest fields, duplicate YAML keys, aliases, traversal, unsafe symbolic links, invalid cross-platform paths, duplicate module names, and missing declared inputs.
@@ -383,6 +474,366 @@ cd study-circle
 npm install
 blinkhost test .
 ```
+
+`blinkhost test` reports a frontend test command, a `build_only` check when no
+frontend test script exists, or `validation_only` for static HTML. A successful
+test command provides `command_exit_only` evidence; test counts and native/WASM
+coverage are not collected. By default, declared backend modules are listed as `not_run`.
+Use `--json` to read the versioned result and avoid treating a successful build
+or structure check as test evidence.
+
+Add an optional `blinkhost.tests.json` at the project root to select commands:
+
+New projects can generate executable backend unit-test examples with `--tests`:
+
+```bash
+blinkhost create my-app --template html --module api:typescript --module jobs:python --tests --no-install
+cd my-app
+blinkhost test . --json
+```
+
+This opt-in creates `blinkhost.tests.json`, `TESTING.md` and two native tests per
+module. JavaScript/TypeScript tests call the actual handler; Python/Go/Rust tests
+share application logic with the guest entrypoint. Rust uses a separate native
+crate and Go selects a pure application package, avoiding WASI SDK host imports
+in the native tests. JavaScript/TypeScript, Python and Rust tests live outside the
+guest bundle under `tests/native/`. The Python runner disables bytecode writes
+to keep unsupported cache files out of guest sources. TypeScript uses Node's experimental type stripping and does
+not typecheck. Other frontend templates add a separate build check, requiring
+frontend dependency installation first. HTML selects no frontend tests.
+These native tests do not certify host calls, compiled WASM, libSQL or browsers.
+`--tests` requires modules and permits at most 32 checks including a frontend build.
+
+Use `runner: node`, `python-unittest`, `go` or `rust` instead of `command` for
+bundled native adapters. The CLI resolves its installed files, so the application
+does not need a dependency on `@blinkhost/cli` or adapter filesystem paths.
+Installed runners require `kind: test` and `profile: native`; structured results
+are enabled automatically. Install the selected language tools on PATH. The
+locally qualified Linux versions are Node 22.23.3, Python 3.12.3, Go 1.27.3 and
+Rust/Cargo 1.98.0. Customer-owned custom commands remain available separately.
+
+```json
+{
+  "schema": "blinkhost.local-test-config/v1",
+  "checks": [
+    { "id": "frontend-unit", "target": "frontend", "command": "npm", "args": ["run", "test"], "kind": "test", "profile": "browser" },
+    { "id": "api-unit", "target": "module:api", "command": "cargo", "args": ["test", "--locked"], "kind": "test", "profile": "native" },
+    { "id": "worker-unit", "target": "module:worker", "command": "python", "args": ["-m", "unittest", "discover", "-s", "tests"], "kind": "test", "profile": "native" }
+  ]
+}
+```
+
+Adapt the example to your declared modules and installed test tools. Configuration
+replaces the default frontend command; unselected modules remain visibly untested.
+Targets are `frontend`, `project`, or `module:NAME`. The working directory defaults
+to the frontend dependency root, project root, or declared module root; optional
+`cwd` selects another regular directory inside the project. Commands run sequentially
+as executable plus literal arguments, without an implicit shell. Use `kind: build`
+for build checks and `kind: integration` for integrations. `profile` records your
+declared `native`, `wasm`, or `browser` intent; it does not certify the actual
+runtime. Counts remain unknown without structured runner results.
+All rows validate before any command starts. Limits are 64 KiB of configuration,
+32 checks, 64 arguments/check and 32 KiB of combined argument bytes/check.
+Command arguments are not echoed into result receipts.
+
+For structured results, add `"results": { "format": "blinkhost/v1" }` to a test
+or integration check. The CLI creates a fresh temporary result directory for each
+command and supplies `BLINKHOST_TEST_RESULT_PATH`, `BLINKHOST_TEST_RUN_ID`,
+`BLINKHOST_TEST_CHECK_ID` and `BLINKHOST_TEST_PROFILE`. Your runner adapter writes
+one UTF-8 JSON file to that path before exiting:
+
+```json
+{
+  "schema": "blinkhost.local-test-results/v1",
+  "run_id": "value of BLINKHOST_TEST_RUN_ID",
+  "check_id": "value of BLINKHOST_TEST_CHECK_ID",
+  "profile": "value of BLINKHOST_TEST_PROFILE",
+  "runner": "your-runner/version",
+  "tests": [
+    { "id": "auth-denies-expired-token", "name": "Expired tokens are denied", "status": "passed", "duration_ms": 12 }
+  ],
+  "coverage": { "status": "collected", "metrics": { "lines": { "covered": 80, "total": 100 } } }
+}
+```
+
+An adapter must translate actual runner results; do not infer passing tests from
+a successful build or command. Test IDs are unique within each check. Status is
+`passed`, `failed`, `skipped` or `unsupported`; optional bounded `message` and
+`stack` fields carry diagnostics. Empty tests report `no_tests`, and skipped or
+unsupported tests count as zero executions. Durations are integer milliseconds.
+Missing, invalid, replayed or mismatched required reports fail the command.
+Reported failed tests fail the check even if the process exits zero; nonzero
+process exits always remain failures. Following checks remain explicitly unrun.
+
+Coverage is optional (`not_collected`), `unavailable`, or `collected` with at
+least one of `lines`, `branches`, and `functions`, each containing integer
+`covered` and `total` counts. Covered cannot exceed total. Collected coverage
+requires executed tests. Per-check coverage retains its declared profile; native
+coverage does not imply WASM coverage. Reports and metrics are visibly
+`customer_runner_reported`; this importer does not verify runtime/engine/artifact
+identity or authorize preview/promotion. Aggregate test counts stay unknown if
+any selected test command lacks structured results. CLI regression counts are
+separate from your application test counts.
+
+Reports are limited to 1 MiB and 10,000 tests per check, and 4 MiB across the
+sequence. The importer rejects unknown fields, malformed UTF-8 and nonregular,
+symlink or hardlinked inputs. It screens common credentials and terminal controls
+in diagnostics, and removes temporary run context from receipts. Screening is
+heuristic; omit sensitive data in your adapter. Cleanup removes only the fresh
+temporary directory created for that check, preserving project-owned results.
+Arbitrary local commands have your local permissions; this workflow is not a
+hostile-code sandbox. The standard-runner adapters below, compiled-WASM checks
+through the [local development toolkit](./dist/local-development/README.md),
+and the IDE's **Tests → Inspect local test results** panel provide the local
+workflow. Local preview/promotion preflight can require these results; hosted
+activation separately requires a signed result with current resource custody.
+Importing a local report does not grant that authority.
+
+The Node `node:test` adapter is available through `runner: node` with `kind: test`,
+`profile: native` and arguments such as `tests/app.test.mjs`. The CLI selects
+`--test` and its bundled reporter; changing reporter or execution mode through
+runner arguments is rejected. The explicit `@blinkhost/cli/test/node-reporter`
+export also remains available for customer-owned command configurations.
+Add `--experimental-test-coverage` to collect Node's native coverage metrics.
+This adapter is locally qualified on Node 22.23.3. It reconciles
+root and file-level counts with individual terminal events, excludes empty-file
+checks and suites, includes nested test
+cases, and treats skip/todo as skipped. Cancelled child tests remain failures.
+Missing final summaries fail the adapter, and it refuses WASM/browser labels.
+
+Select the packaged Python standard-library `unittest` adapter with
+`runner: python-unittest`:
+
+```json
+{
+  "schema": "blinkhost.local-test-config/v1",
+  "checks": [{
+    "id": "python-unit",
+    "target": "project",
+    "cwd": ".",
+    "runner": "python-unittest",
+    "args": ["discover", "-s", "tests"],
+    "kind": "test",
+    "profile": "native",
+    "results": { "format": "blinkhost/v1" }
+  }]
+}
+```
+
+Ordinary unittest discovery, explicit test names, name filters and failfast flags
+are supported. Each declared parent test produces one record; subtest failures
+fail their parent and subtests do not inflate counts. Expected failures are
+skipped, unexpected successes are failures, and empty discovery reports no
+tests. Collection and class/module fixture failures fail the command without
+inventing test records. Cancellation never produces a successful report.
+Reports have a 10,000-test/1 MiB bound, screen common credentials and run context,
+and never overwrite a result file. Native coverage defaults to `not_collected`; this
+adapter does not report WASM or browser coverage. The current local qualification
+uses Python 3.12.3 on Linux; other Python/platform combinations remain unqualified.
+The runner uses customer test code and Python's standard library independently
+of BlinkHost account, database and mail services. Local process cleanup is not a
+security sandbox; use isolated resources for untrusted application tests.
+
+To collect native Python line and branch coverage, add `coverage.py` 7.x to your
+application's test environment and opt in through the check arguments:
+
+```json
+"args": ["--coverage=app", "discover", "-s", "tests"]
+```
+
+Use the package dependency `coverage` (locally qualified at version 7.10.7).
+Repeat `--coverage=relative-directory` for up to 16 source directories inside the
+check's working directory. Bare `--coverage` measures that whole directory;
+prefer explicit application folders to avoid counting test code or dependencies.
+Coverage includes discoverable Python source files within those folders even if
+tests never import them. Missing, empty, absolute or escaping directory values
+are rejected before test discovery. The adapter ignores `.coveragerc`, retains
+only bounded numeric totals and writes no coverage database or JSON report file.
+No function totals, subprocess/multiprocessing aggregation, browser coverage or
+WASM coverage are provided. Instrumentation runs within the check's existing
+time and memory limits.
+
+Missing or unsupported dependencies, instrumentation/report errors and empty or
+skipped-only suites report `unavailable`. Test outcomes keep their actual
+meaning: coverage cannot make a failed test pass. Hosted offline checks use the
+same adapter with a locked pure Python wheel bound to the selected module's SBOM;
+the worker does not download or install the dependency during test execution.
+
+The Go adapter runs ordinary native `go test -json` with `runner: go`. Select package patterns
+and Go test flags as literal arguments:
+
+```json
+{
+  "schema": "blinkhost.local-test-config/v1",
+  "checks": [{
+    "id": "go-unit",
+    "target": "project",
+    "cwd": ".",
+    "runner": "go",
+    "args": ["-count=1", "./..."],
+    "kind": "test",
+    "profile": "native",
+    "results": { "format": "blinkhost/v1" }
+  }]
+}
+```
+
+Install Go on your PATH and run this through `blinkhost test`. The adapter
+validates the native profile before invoking Go. It forwards selection, repeat,
+parallelism, timeout and failfast flags. Each completed Go parent test, subtest
+and repeat produces its own record, as reported by Go; package build/execution
+checks never count as application tests. Empty/skipped-only packages remain
+explicit. Failed package exits fail the check, even if no tests were declared.
+Missing package/test terminal events and interrupted runs cannot supply passing
+reports. Native coverage is `not_collected`, including when Go's `-cover` prints
+a percentage; the adapter does not turn percentages into invented counts.
+
+Compile-only, list, benchmark, fuzz and custom execution modes are rejected.
+Inherited `GOFLAGS` is cleared to preserve the structured runner mode; put your
+ordinary test flags in the configured argument list. Cross-compiled GOOS/GOARCH
+profiles are refused. Go's `./...` excludes nested Go modules; declare separate
+checks with their module directories to include them. Dependencies, toolchain
+downloads and customer test effects follow your own Go configuration and local
+permissions. No BlinkHost account/mail/database service is used by this adapter.
+
+Result bounds remain 10,000 tests and 1 MiB; event parsing additionally caps each
+JSON event and retained test diagnostic at 64 KiB, the event stream at 32 MiB,
+and retained diagnostics at 4 MiB. Oversize/incomplete results fail. Common
+credentials, terminal controls and run context are screened before diagnostic
+truncation, and fresh private results never overwrite existing files. The parent
+CLI owns timeout/output budgets and process-group cleanup. The local qualification
+targets Node 22.23.3 and Go 1.27.3 on Linux; other versions/platforms, hostile-code
+isolation and actual compiled-WASM execution retain separate validation gates.
+
+Select the stable Rust adapter with `runner: rust`; it is also exported as
+`@blinkhost/cli/test/rust-runner`. It uses Cargo JSON build records to discover
+native unit/integration test binaries, then reconciles each stable libtest result
+with a separate selected-test census, ignored-test census, summary and exit code.
+It does not require nightly Rust or `RUSTC_BOOTSTRAP`. Install Rust/Cargo locally:
+
+```json
+{
+  "schema": "blinkhost.local-test-config/v1",
+  "checks": [{
+    "id": "rust-native",
+    "target": "project",
+    "runner": "rust",
+    "args": [],
+    "kind": "test",
+    "profile": "native",
+    "results": { "format": "blinkhost/v1" }
+  }, {
+    "id": "rust-doc",
+    "target": "project",
+    "command": "cargo",
+    "args": ["test", "--doc"],
+    "kind": "test",
+    "profile": "native"
+  }]
+}
+```
+
+Pass ordinary Cargo selection/features before `--`, and libtest filters, exact
+selection, ignored/include-ignored or test-thread flags after it. Each native
+test is counted once; ignored cases are skipped. Individual timing and native
+coverage are unavailable and are not inferred from suite time or build success.
+The separate doctest command has `command_exit_only` evidence, so aggregate test
+counts remain unknown when it is included. Declare nested Cargo projects as
+separate checks with their directories. Benchmarks, doctests inside the adapter,
+cross targets, alternate output modes, uncaptured output and nightly options are
+rejected. Custom harnesses and unsupported output formats fail closed.
+
+Stable libtest text has no versioned machine contract; this adapter's local
+qualification targets Rust 1.98.0/Cargo 1.98.0 with Node 22.23.3 on Linux. Other
+versions/platforms remain unqualified. Every build/list/execution stdout is
+bounded at 1 MiB, with the existing total CLI timeout/output and canonical result
+bounds. Failed tests carry bounded screened per-test output. Cargo build scripts,
+dependencies and tests use your local permissions and configuration; isolate
+untrusted projects. This is native testing, with no BlinkHost internal services
+and no compiled-WASM/libSQL/runtime certification.
+
+Results include every configured check, bounded execution receipts and unrun
+checks after the first failure. Nested `blinkhost.yaml` projects are discovered
+and reported as unrun; use `blinkhost test path/to/project` to run each explicitly.
+Discovery skips dependency/build/cache directories and directory symlinks. It
+reports incomplete discovery after eight levels, 2048 directories, 16384 entries
+or 128 nested projects. Review unexplored directories before treating the check
+set as complete. Discovery does not execute discovered projects.
+
+For a local required-check preflight, add `blinkhost.gates.json` and run
+`blinkhost test . --gate preview --json` or `--gate promotion`. Configure explicit
+structured checks in `blinkhost.tests.json`, using installed runners or the
+`blinkhost/v1` result protocol. The selected stage requires every named check to
+exit successfully, report at least one passing test, and report zero failed,
+skipped or unsupported tests. A build or a successful command without a valid
+test report cannot satisfy a required check. All configured commands still run;
+the selected stage determines which reports must contain only passing tests.
+
+```json
+{
+  "schema": "blinkhost.local-test-gates/v1",
+  "inputs": {
+    "source": ["src/app.ts", "tests/app.test.ts"],
+    "artifacts": [],
+    "dependencies": ["package.json", "package-lock.json"],
+    "runtime": ["runtime.json"],
+    "resources": ["resources.json"],
+    "fixtures": ["fixtures/customer.json"]
+  },
+  "stages": {
+    "preview": ["unit"],
+    "promotion": ["unit", "integration"]
+  }
+}
+```
+
+Adapt file paths and check names to your application. All six input categories
+must be present; source must contain at least one file. List individual regular
+files using relative paths with letters, digits, `_`, `.`, `@`, `-` and `/`.
+Directories, glob patterns, duplicate paths, path traversal and symlinks are
+rejected. Keep changing output/log files outside the declared input set. The CLI
+includes `blinkhost.yaml`, `blinkhost.tests.json` and `blinkhost.gates.json`
+automatically, and snapshots the Node binary, relevant CLI/adapter files and
+resolved check executables. It compares selected input hashes before and after
+the checks. A changed, removed or unavailable input blocks the local gate;
+changed executable bytes or resolution also block stale local evidence.
+Configuration replacement during setup is rejected. Duplicate JSON keys are
+invalid in the gate policy.
+
+Gate configuration is limited to 64 KiB and declared inputs to 1,024 files.
+Snapshot reads allow at most 256 MiB per file and 512 MiB total, including CLI
+tools. Setup, snapshots and commands share the selected `--timeout`. The
+`local_gate` receipt records stage, passed/blocked status, input hashes and each
+required check's outcome. Local gates currently qualify Linux only.
+
+This preflight is **customer-runner-reported local evidence** with
+`scope: declared_local_inputs` and `production_authority: false`. You must list
+the application inputs you intend to check. It does not establish complete
+dependency, environment or dynamic-library coverage, and before/after snapshots
+cannot detect temporary changes reverted during execution. It does not run a
+remote preview, authorize promotion or attest an isolated worker execution.
+Trusted preview/promotion enforcement requires the separate server-side test
+stages. Ordinary `blinkhost test` behavior is unchanged without `--gate`.
+
+Local commands share a default 900-second timeout and 1 MiB of combined
+stdout/stderr. Use `--timeout 120` (1–3600 seconds) and
+`--max-output-bytes 1048576` (1024–8388608 bytes) to choose other bounds.
+The timeout and output allowance apply to the whole configured sequence.
+Commands receive no interactive stdin. Timeouts, cancellation and output
+overflow fail the check; overflow never becomes a successful truncated result.
+SIGINT exits 130 and SIGTERM exits 143.
+
+Execution receipts include bounded stdout/stderr after screening common
+credentials and terminal controls. Output is collected before display, with no
+raw subprocess streaming; `--json` emits one response including the receipt.
+Screening is not exhaustive, so review results before sharing. POSIX cleanup
+covers the owned process group, while Windows cleanup covers the direct child.
+Local commands run with your machine permissions; these controls are not a
+security sandbox or CPU/memory isolation. The command performs no update checks.
+Result delivery waits at most three seconds for successful output or one second
+for failure/cancellation output. Closed or stalled pipes exit 4. Interrupting
+result delivery can leave an incomplete response; SIGINT/SIGTERM still exit
+130/143 after owned-command cleanup.
 
 ## Remote workflows
 
@@ -432,10 +883,18 @@ blinkhost projects get PROJECT_ID
 blinkhost previews list --query project=PROJECT_ID
 blinkhost builds list --query project=PROJECT_ID
 blinkhost deployments get DEPLOYMENT_ID
+blinkhost deployments preparation-diagnostics DEPLOYMENT_ID --project PROJECT_UUID
 blinkhost modules list --query site_id=PROJECT_ID
 blinkhost databases list --query project=PROJECT_ID
 blinkhost organizations get ORGANIZATION_ID
 ```
+
+`deployments preparation-diagnostics` shows recorded native compiler failures for
+the selected release and project, including validated measured sizes and platform
+preparation budgets. These are past attempt facts; they do not confirm current
+serving health or native readiness. Changing plans does not increase platform
+compiler limits. The command only reads, does not retry or prepare modules, and
+displays unavailable details safely. `--json` returns the same bounded projection.
 
 Create and update operations accept a JSON object or `@path` to a JSON file:
 
@@ -500,17 +959,70 @@ Database, binding, module, and asset operations remain subject to workspace perm
 
 ```bash
 blinkhost logs --project PROJECT_ID --since 1h --limit 100
+blinkhost logs --project PROJECT_ID --follow --severity error --max-events 1000
+blinkhost logs --project PROJECT_ID --preview-session-id SESSION_UUID --json
+blinkhost logs --project PROJECT_ID --attribute-filters '[{"path":["order","id"],"op":"eq","type":"integer","value":18446744073709551615}]' --json
 blinkhost metrics --project PROJECT_ID --since 24h
 blinkhost analytics --project PROJECT_ID
 blinkhost doctor
 blinkhost support bundle
 ```
 
+Logs use the linked project when `--project` is omitted. `--since` accepts a
+positive integer followed by `s`, `m`, `h` or `d` (up to 366 days), or a
+timezone-aware ISO timestamp with at most millisecond precision. It sends a
+fixed `start_time` to the API. Alternatively use `--hours N`, or `--start-time`
+and `--end-time`; the start is inclusive and the end exclusive. The service
+enforces current permissions, retention and plan query bounds. The default
+lookback is one hour. Metrics and analytics accept duration `--since` values
+and round them up to whole hours; they do not accept absolute timestamps.
+
+Log filters include `--severity`, `--event-kind`, `--search`, `--request-id`,
+`--trace-id`, `--source`, `--operation`, `--outcome`, `--status-code`, `--region`,
+`--release-id`, `--environment-kind`, `--environment-id`, `--deployment-id`
+and `--preview-session-id`. A preview session implies the preview environment
+and cannot combine with deployed environment/deployment IDs. Custom
+`--attribute-filters` use the same bounded typed JSON predicates as the
+dashboard and API. Quote exact 64-bit integer JSON in the shell as above;
+generating it with a JavaScript `Number` can round it before the CLI receives it.
+Run `blinkhost logs --help` for command examples and options.
+
+History reads newest first, one page at a time. `--limit` is the page size
+(1–200, default 100); `--max-events` is the total output bound (1–10,000,
+default 200 for history and 10,000 for follow). History also stops after
+1,000 pages or 120 seconds. A cutoff summary includes `has_more`, `next_cursor`
+and the effective filters. Continue with `--cursor` and exactly those filters,
+using the summary's `--start-time` instead of recomputing `--since`. Cursors
+are scoped and may expire. Concurrent ingestion and retention can change
+history between pages.
+
+`--follow` uses an authenticated scoped ticket, polls every 2.5 seconds, reads
+at most ten pages per poll and remembers at most 1,000 IDs for deduplication.
+It retries transient failures at most three times with bounded backoff, and
+stops on permission errors, ticket expiry, the event bound or interruption.
+Notices identify reconnects and unconfirmed continuity; late arrivals and
+full windows can leave gaps. Use retained history to inspect an interval.
+Ctrl-C/SIGINT and SIGTERM exit with 130 and 143, respectively. Cancellation
+targets only the current owned query and ticket closure is attempted with an
+independent timeout; unconfirmed cleanup is reported when output is available.
+Output is awaited before fetching another page. Interrupting a stalled pipe
+can leave its final line or summary incomplete; a closed pipe exits with code 4.
+Logs do not perform background update checks.
+
+With `--json`, logs emit newline-delimited JSON: `{"kind":"event","event":...}`,
+`{"kind":"notice","code":...,"message":...}` and a final
+`{"kind":"summary","events":...,"duplicates_skipped":...,"reason":...,"filters":...,"has_more":...,"next_cursor":...}`.
+A failed command may follow emitted records with the standard `ok:false`
+error object and exits nonzero. Stored attribute JSON preserves exact integer
+tokens when available; otherwise `precision_notice` identifies the fallback.
+Use an integer-preserving parser downstream. Text mode prints quoted
+time/severity/message and exposes terminal controls and embedded newlines.
+
 Support bundles are local, redacted JSON files with mode `0600`. They exclude tokens, secret values, source code, filenames, and repository URLs.
 
 ## CI and automation
 
-All commands support `--json`. In JSON mode, stdout contains exactly one response object on success or failure; subprocess and human diagnostics use stderr. Register one exact GitHub branch, tag, or protected environment as a workload identity, then grant the workflow `id-token: write`. The CLI exchanges GitHub's signed OIDC assertion for a ten-minute BlinkHost token automatically; no BlinkHost secret is stored in GitHub.
+All commands support `--json`. In JSON mode, stdout contains one response object on success or failure, except `logs`, which emits the NDJSON stream described above, and local-stack `dev`, which emits readiness and final records; subprocess and human diagnostics use stderr. Register one exact GitHub branch, tag, or protected environment as a workload identity, then grant the workflow `id-token: write`. The CLI exchanges GitHub's signed OIDC assertion for a ten-minute BlinkHost token automatically; no BlinkHost secret is stored in GitHub.
 
 ```bash
 blinkhost workloads create --data @workload.json

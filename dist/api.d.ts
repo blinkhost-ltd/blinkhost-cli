@@ -1,5 +1,5 @@
 import { type Profile } from './config.js';
-export declare function publicRequest(apiOrigin: string, path: string, init?: RequestInit): Promise<{
+export declare function publicRequest(apiOrigin: string, path: string, init?: RequestInit, responseLimit?: number): Promise<{
     response: Response;
     data: unknown;
 }>;
@@ -16,7 +16,7 @@ export declare class ApiClient {
     }>;
     static fromAccessToken(profileName: string, profile: Profile, accessToken: string): ApiClient;
     projectArchive(projectId: string, mode?: 'portable' | 'source'): Promise<Buffer>;
-    request(path: string, init?: RequestInit): Promise<unknown>;
+    request(path: string, init?: RequestInit, responseLimit?: number): Promise<unknown>;
     rememberIdentity(identity: {
         id?: number;
         username?: string;

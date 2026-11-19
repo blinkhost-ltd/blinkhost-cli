@@ -1,4 +1,5 @@
 import { CliError, EXIT } from './errors.js';
+import { moduleBuildFailureGuidance } from './module-build-diagnostics.js';
 
 const uuid = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.exec(value)?.[0] === value;
 const hash = (value: unknown) => typeof value === 'string' && /^[a-f0-9]{64}$/.exec(value)?.[0] === value;
@@ -33,4 +34,6 @@ export function validateModuleBuild(value: unknown, expected: {
     || (item.applied_at === null ? item.verification !== 'not_applied' || item.build_id !== null
       : !date(item.applied_at) || item.verification !== 'build_requested_not_published')
     || (action === 'build-approve' && !item.applied_at)) return fail();
+  if (item.failure_diagnostic !== undefined && item.failure_diagnostic !== null
+      && !moduleBuildFailureGuidance(item)) return fail();
 }

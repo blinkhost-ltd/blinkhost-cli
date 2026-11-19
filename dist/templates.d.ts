@@ -9,6 +9,7 @@ export interface ScaffoldOptions {
     packageManager: PackageManager;
     modules: ScaffoldModule[];
     database?: string;
+    tests?: boolean;
 }
 export interface Scaffold {
     manifest: BlinkHostManifest;

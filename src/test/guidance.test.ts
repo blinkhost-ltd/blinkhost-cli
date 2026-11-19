@@ -94,7 +94,7 @@ test('scoped help and JSON failures use a single stdout object', () => {
   else assert.equal(payload.error.code, 'unsupported_node');
 });
 
-test('JSON mode keeps child-process output off stdout', { skip: !supportedNodeVersion() }, async () => {
+test('JSON mode returns bounded child diagnostics inside one failure response', { skip: !supportedNodeVersion() }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'blinkhost-json-child-'));
   const cli = join(process.cwd(), 'dist', 'cli.js');
   const created = spawnSync(process.execPath, [cli, 'create', 'sample', '--no-install'], { cwd: root, encoding: 'utf8' });
@@ -106,9 +106,10 @@ test('JSON mode keeps child-process output off stdout', { skip: !supportedNodeVe
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
   const result = spawnSync(process.execPath, [cli, 'test', project, '--json'], { encoding: 'utf8' });
   assert.equal(result.status, 3);
-  assert.match(result.stderr, /child stdout/);
-  assert.match(result.stderr, /child stderr/);
+  assert.equal(result.stderr, '');
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, false);
   assert.equal(payload.error.code, 'project_test_failed');
+  assert.match(payload.error.execution.output.stdout, /child stdout/);
+  assert.match(payload.error.execution.output.stderr, /child stderr/);
 });

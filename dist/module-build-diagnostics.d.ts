@@ -1,0 +1,10 @@
+export declare function isModuleBuildPath(path: string): boolean;
+export declare function moduleBuildPortableFailureGuidance(payload: unknown): string | undefined;
+export declare function moduleBuildGuestMemoryFailureGuidance(payload: unknown): string | undefined;
+export declare function moduleBuildPackageFailureGuidance(payload: unknown): string | undefined;
+export declare function moduleBuildFailureGuidance(payload: unknown): string | undefined;
+export declare function moduleBuildSourceGuidance(payload: unknown): string | undefined;
+export declare function moduleBuildQuotaGuidance(payload: unknown): string | undefined;
+export declare function moduleBuildRejectionGuidance(payload: unknown): string | undefined;
+export declare function readModuleBuildRejection(response: Response): Promise<unknown>;
+export declare function moduleBuildRequestId(candidate: string | null, fallback: string): string;

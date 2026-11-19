@@ -16,12 +16,39 @@ import { runDesign } from './design.js';
 import { exportProject } from './project-export.js';
 import { activeProfile, readConfig, validateProfileName, writeConfig } from './config.js';
 import { openPreview, projectStatus, rawApi, readProjectLink, runFunctions, runRemote, runSecrets, syncProject, unlinkProject, uploadAsset, waitForRemote, writeProjectLink } from './remote.js';
-import { checkForUpdate, ciCheck, completion, maybeUpdateNotice, observability, releaseNotes, runDev, runPlugins, supportBundle, testProject } from './workflows.js';
+import { checkForUpdate, ciCheck, completion, localProjectCheckMessage, maybeUpdateNotice, observability, releaseNotes, runDev, runPlugins, supportBundle, testProject } from './workflows.js';
+import { runLogCommand, renderLogEntry, writeLogOutput } from './logs.js';
 import { documentationIndex, documentationTopic, quickstart, renderTopHelp, renderTopic, searchDocumentation, TOP_LEVEL_COMMANDS } from './guidance.js';
 import { VERSION, supportedNodeVersion } from './version.js';
 import { terminalJson, terminalText } from './terminal.js';
+import { LocalTestChecksFailure, LocalTestCommandFailure, sanitizeLocalTestOutput } from './local-test-command.js';
+import { runTestCredentials } from './test-credentials.js';
 let quietOutput = false;
 let verboseOutput = false;
+let incompleteLogOutput = false;
+async function writeLocalCheckOutput(stream, value, signal) {
+    if (!value)
+        return true;
+    let failed = false;
+    const closed = () => { failed = true; };
+    stream.on('error', closed);
+    let written = false;
+    try {
+        written = await writeLogOutput(stream, value, signal);
+    }
+    catch {
+        failed = true;
+    }
+    if (!written || failed) {
+        incompleteLogOutput = true;
+        stream.once('close', () => stream.off('error', closed));
+        stream.destroy();
+        stream.unref?.();
+        return false;
+    }
+    stream.off('error', closed);
+    return true;
+}
 function emit(output, json) {
     if (json)
         process.stdout.write(`${terminalJson(JSON.stringify(output))}\n`);
@@ -103,6 +130,7 @@ async function commandCreate(args, json) {
     const packageManager = (takeOption(args, '--package-manager') ?? 'npm');
     const moduleValues = takeRepeatedOption(args, '--module');
     const database = takeOption(args, '--database');
+    const tests = takeFlag(args, '--tests');
     const noInstall = takeFlag(args, '--no-install');
     const explicitInstall = takeFlag(args, '--install');
     if (noInstall && explicitInstall)
@@ -119,7 +147,7 @@ async function commandCreate(args, json) {
     if (new Set(modules.map((item) => item.name)).size !== modules.length)
         throw new CliError('Backend module names must be unique.', EXIT.usage, 'duplicate_module');
     const target = resolveLocalPath(name);
-    const scaffold = createScaffold({ name, framework, packageManager, modules, ...(database ? { database } : {}) });
+    const scaffold = createScaffold({ name, framework, packageManager, modules, ...(database ? { database } : {}), ...(tests ? { tests } : {}) });
     await writeScaffoldAtomically(target, scaffold.files, scaffold.manifest);
     if (install && framework !== 'html') {
         const installArgs = {
@@ -314,8 +342,49 @@ export async function main(argv = process.argv.slice(2)) {
         else if (command === 'doctor')
             await commandDoctor(args, json);
         else if (command === 'test') {
-            const data = await testProject(args, json);
-            emit({ ok: true, command, message: 'Project checks passed.', data }, json);
+            const controller = new AbortController();
+            const interrupt = () => controller.abort('SIGINT');
+            const terminate = () => controller.abort('SIGTERM');
+            process.once('SIGINT', interrupt);
+            process.once('SIGTERM', terminate);
+            try {
+                let value = '';
+                let exitCode = EXIT.success;
+                let stream = process.stdout;
+                try {
+                    const data = await testProject(args, json, controller.signal);
+                    const message = localProjectCheckMessage(data);
+                    value = json ? terminalJson(JSON.stringify({ ok: true, command, message, data })) + '\n'
+                        : quietOutput ? '' : terminalText(message) + '\n' + terminalJson(JSON.stringify(data, null, 2)) + '\n';
+                }
+                catch (error) {
+                    const failure = error instanceof CliError ? error : new CliError(error instanceof Error ? error.message : String(error), EXIT.internal, 'internal_error');
+                    exitCode = failure.exitCode;
+                    const message = sanitizeLocalTestOutput(failure.message);
+                    const details = failure.details.map(sanitizeLocalTestOutput);
+                    if (json)
+                        value = terminalJson(JSON.stringify({ ok: false, command, error: {
+                                code: failure.code, message, details,
+                                ...(failure instanceof LocalTestCommandFailure ? { execution: failure.execution } : {}),
+                                ...(failure instanceof LocalTestChecksFailure && failure.projectChecks ? { project_checks: failure.projectChecks } : {}),
+                            } })) + '\n';
+                    else {
+                        stream = process.stderr;
+                        value = terminalText(`Error: ${message}\n` + details.map(detail => `  - ${detail}\n`).join('')
+                            + (failure instanceof LocalTestCommandFailure ? failure.execution.output.stdout + failure.execution.output.stderr : ''));
+                    }
+                }
+                // A cancelled command still gets an independent, bounded attempt to emit its receipt.
+                const outputSignal = controller.signal.aborted || exitCode !== EXIT.success
+                    ? AbortSignal.timeout(1000) : AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]);
+                const written = await writeLocalCheckOutput(stream, value, outputSignal);
+                return controller.signal.aborted ? controller.signal.reason === 'SIGTERM' ? 143 : 130
+                    : written ? exitCode : EXIT.filesystem;
+            }
+            finally {
+                process.off('SIGINT', interrupt);
+                process.off('SIGTERM', terminate);
+            }
         }
         else if (command === 'ai') {
             const result = await runAssistant(args, profile);
@@ -456,15 +525,86 @@ export async function main(argv = process.argv.slice(2)) {
             const data = await runSecrets(args, profile);
             emit({ ok: true, command, message: 'Secret operation completed.', data }, json);
         }
+        else if (command === 'test-credentials') {
+            const data = await runTestCredentials(args, profile);
+            emit({ ok: true, command, message: 'Test credential operation completed.', data }, json);
+        }
         else if (command === 'functions') {
             const data = await runFunctions(args, profile);
             emit({ ok: true, command, message: 'Function operation completed.', data }, json);
         }
         else if (command === 'dev') {
-            const data = await runDev(args, json);
-            emit({ ok: true, command, message: 'Local development process finished.', data }, json);
+            let value = '', exitCode = EXIT.success;
+            let stream = process.stdout;
+            try {
+                const data = await runDev(args, json, (ready, signal) => writeLocalCheckOutput(process.stdout, ready, signal));
+                const message = 'Local development process finished.';
+                value = json ? terminalJson(JSON.stringify({ ok: true, command, message, data })) + '\n'
+                    : quietOutput ? '' : terminalText(message) + '\n' + terminalJson(JSON.stringify(data, null, 2)) + '\n';
+            }
+            catch (error) {
+                const failure = error instanceof CliError ? error : new CliError('Local development failed.', EXIT.internal, 'local_dev_failed');
+                exitCode = failure.exitCode;
+                value = json ? terminalJson(JSON.stringify({ ok: false, command, error: {
+                        code: failure.code, message: failure.message, details: failure.details
+                    } })) + '\n'
+                    : terminalText(`Error: ${failure.message}\n` + failure.details.map(detail => `  - ${detail}\n`).join(''));
+                if (!json)
+                    stream = process.stderr;
+            }
+            // Owned companions have already stopped. Final output is independently bounded.
+            if (incompleteLogOutput)
+                return exitCode === EXIT.success ? EXIT.filesystem : exitCode;
+            return await writeLocalCheckOutput(stream, value, AbortSignal.timeout(1000)) ? exitCode : EXIT.filesystem;
         }
-        else if (command === 'logs' || command === 'metrics' || command === 'analytics') {
+        else if (command === 'logs') {
+            const controller = new AbortController();
+            let interrupted = 0;
+            const interrupt = () => { interrupted = 130; controller.abort(); };
+            const terminate = () => { interrupted = 143; controller.abort(); };
+            process.once('SIGINT', interrupt);
+            process.once('SIGTERM', terminate);
+            let outputError;
+            let outputAbandoned = false;
+            const brokenOutput = (error) => { outputError = error; controller.abort(); };
+            process.stdout.on('error', brokenOutput);
+            try {
+                await runLogCommand(args, profile, async (entry, activeSignal) => {
+                    if (!json && quietOutput)
+                        return;
+                    if (outputAbandoned)
+                        return;
+                    outputAbandoned = !await writeLogOutput(process.stdout, renderLogEntry(entry, json), activeSignal.aborted && entry.kind !== 'event' ? AbortSignal.timeout(1000) : activeSignal);
+                }, controller.signal);
+            }
+            catch (error) {
+                if (outputError || ['EPIPE', 'ERR_STREAM_DESTROYED'].includes(error.code || '')) {
+                    outputError = error instanceof Error ? error : new Error(String(error));
+                }
+                else
+                    throw error;
+            }
+            finally {
+                process.off('SIGINT', interrupt);
+                process.off('SIGTERM', terminate);
+                if (outputAbandoned || outputError) {
+                    incompleteLogOutput = true;
+                    process.stdout.once('close', () => process.stdout.off('error', brokenOutput));
+                    process.stdout.destroy();
+                    // Node preserves stdout's descriptor when destroying the stream.
+                    // A blocked pipe must not keep this interrupted command alive.
+                    process.stdout.unref?.();
+                }
+                else
+                    process.stdout.off('error', brokenOutput);
+            }
+            if (outputError) {
+                process.stderr.write(`Error: Log output closed: ${terminalText(outputError.message)}\n`);
+                return EXIT.filesystem;
+            }
+            return interrupted || EXIT.success;
+        }
+        else if (command === 'metrics' || command === 'analytics') {
             const data = await observability(command, args, profile);
             emit({ ok: true, command, message: `${command} loaded.`, data }, json);
         }
@@ -513,7 +653,7 @@ export async function main(argv = process.argv.slice(2)) {
             const suggestion = commandSuggestion(command);
             throw new CliError(`Unknown command: ${command}.${suggestion ? ` Did you mean \`${suggestion}\`?` : ' Run `blinkhost docs` to list commands.'}`, EXIT.usage, 'unknown_command');
         }
-        if (!json && !quietOutput && !nonInteractive && command !== 'update') {
+        if (!json && !quietOutput && !nonInteractive && command !== 'update' && command !== 'test' && command !== 'dev') {
             const notice = await maybeUpdateNotice(profile);
             if (notice)
                 process.stderr.write(`\n${terminalText(notice)}\n`);
@@ -523,11 +663,15 @@ export async function main(argv = process.argv.slice(2)) {
     catch (error) {
         const failure = error instanceof CliError ? error : new CliError(error instanceof Error ? error.message : String(error), EXIT.internal, 'internal_error');
         if (json)
-            process.stdout.write(`${terminalJson(JSON.stringify({ ok: false, command: command ?? '', error: { code: failure.code, message: failure.message, details: failure.details } }))}\n`);
+            process.stdout.write(`${terminalJson(JSON.stringify({ ok: false, command: command ?? '', error: { code: failure.code, message: failure.message, details: failure.details,
+                    ...(failure instanceof LocalTestCommandFailure ? { execution: failure.execution } : {}) } }))}\n`);
         else {
             process.stderr.write(`Error: ${terminalText(failure.message)}\n`);
             for (const detail of failure.details)
                 process.stderr.write(`  - ${terminalText(detail)}\n`);
+            if (failure instanceof LocalTestCommandFailure) {
+                process.stderr.write(terminalText(failure.execution.output.stdout + failure.execution.output.stderr));
+            }
             if (verboseOutput)
                 process.stderr.write(`Code: ${failure.code}; exit: ${failure.exitCode}\n`);
         }
@@ -536,5 +680,9 @@ export async function main(argv = process.argv.slice(2)) {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
     process.exitCode = await main();
+    // Cleanup has finished. A pending stdout write can retain a libuv request
+    // even after unref(), so abandon it only when bounded logging gave up output.
+    if (incompleteLogOutput)
+        process.exit(process.exitCode);
 }
 //# sourceMappingURL=cli.js.map

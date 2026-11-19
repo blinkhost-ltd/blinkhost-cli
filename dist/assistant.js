@@ -5,6 +5,7 @@ import { CliError, EXIT } from './errors.js';
 import { validateCompatibility } from './compatibility.js';
 import { validateResearchCatalog } from './research.js';
 import { validateModuleBuild } from './module-build.js';
+import { moduleBuildFailureGuidance } from './module-build-diagnostics.js';
 import { validatePeerResponse } from './peer-review.js';
 import { starterName, starterLanguage, validateStarter } from './starter.js';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -414,8 +415,12 @@ export async function runAssistant(input, profile) {
     }
     const client = await ApiClient.create(profile);
     const result = await client.request(path, body === undefined ? {} : { method, body: JSON.stringify(body) });
-    if (moduleBuildExpected)
+    if (moduleBuildExpected) {
         validateModuleBuild(result, moduleBuildExpected, action);
+        const guidance = moduleBuildFailureGuidance(result);
+        if (guidance)
+            message = `Backend module build failed. ${guidance}`;
+    }
     if (starterExpected)
         validateStarter(result, starterExpected, action);
     if (peerExpected)
