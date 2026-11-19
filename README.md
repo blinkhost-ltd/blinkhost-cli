@@ -379,7 +379,7 @@ blinkhost init apps/storefront --dry-run --json
 On x86-64 Ubuntu 24.04 with OpenSSL 3, the optional local stack can run libSQL,
 your compiled WASM module and a static frontend together. Install the BlinkHost
 local runtime and its matching WasmEdge library. The archive's SHA-256 digest is
-`53077f65fc67fde1c75208954ee07019a6e3ca2e4d986afbca1525b2b8dd997b`.
+`ee4f88927234e9d8483662dafe9428201051cb857bbcaac5352a3fcee65cefd3`.
 Use the signed checksum list and verification command in the packaged guide.
 [BlinkHost local runtime](https://github.com/blinkhost-ltd/blinkhost-cli/releases/tag/local-runtime-v2.8.0) · [CLI v2.8.0 signed checksums](https://github.com/blinkhost-ltd/blinkhost-cli/releases/tag/v2.8.0)
 The ordinary frontend development command and native project tests can run
