@@ -16,7 +16,7 @@ cosign verify-blob \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   local-runtime.SHA256SUMS &&
   awk -v name="$archive" '$2 == name' local-runtime.SHA256SUMS | sha256sum --strict --check - &&
-  printf '%s  %s\n' ee4f88927234e9d8483662dafe9428201051cb857bbcaac5352a3fcee65cefd3 "$archive" | sha256sum --strict --check - &&
+  printf '%s  %s\n' 852962e6c1bd4a66bb1dff66e16818cd2980a5e3dcb41316f6568db174b4134f "$archive" | sha256sum --strict --check - &&
   mkdir -p tools && tar -xzf "$archive" -C tools
 ```
 
