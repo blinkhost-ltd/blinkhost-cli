@@ -81,6 +81,22 @@ test('history retains scope and uses the remaining row budget without losing cut
         assert.match(renderLogEntry(summary, false), /--cursor "cursor2".*--start-time/);
     }
 });
+test('typed historical pages send the exact integer JSON and keep cursors in the query string', async () => {
+    const raw = '[{"path":["id"],"op":"eq","type":"integer","value":18446744073709551615}]';
+    const cursors = [];
+    await readLogs({ async request(path, init) {
+            const url = new URL(path, 'http://local');
+            assert.equal(url.pathname, `/api/sites/${project}/observability/logs/search/`);
+            const query = url.searchParams;
+            assert.equal(init?.method, 'POST');
+            assert.equal(init?.body, raw);
+            assert.equal(query.has('attribute_filters'), false);
+            assert.equal(query.get('severity'), 'info');
+            cursors.push(query.get('cursor'));
+            return cursors.length === 1 ? batch(['a'], 'next') : batch(['b']);
+        } }, options(['--attribute-filters', raw, '--severity', 'info', '--limit', '1']), async () => { }, new AbortController().signal);
+    assert.deepEqual(cursors, [null, 'next']);
+});
 test('history rejects cycles, overfull pages, missing cursors and malformed rows', async () => {
     for (const malformed of [batch(['x', 'y', 'z']), { events: [], has_more: true, next_cursor: 'x' }, { events: [{ event_id: 1 }], has_more: false }, { events: [], has_more: 'no' }]) {
         await assert.rejects(readLogs({ request: async () => malformed }, options(['--limit', '2']), async () => { }, new AbortController().signal), { code: 'invalid_log_response' });
