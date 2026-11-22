@@ -258,10 +258,16 @@ export async function readLogs(client, options, emit, interruptSignal, pause = a
     const remember = (id) => { seen.add(id); if (seen.size > 1000)
         seen.delete(seen.values().next().value); };
     const notice = (code, message) => emit({ kind: 'notice', code, message }, signal);
+    const { attribute_filters: predicates, ...scalarFilters } = options.filters;
+    const historyPath = predicates ? 'logs/search/' : 'logs/';
     const requestPage = async (path) => {
         const queryId = randomUUID();
         try {
-            return await client.request(path, { signal, headers: { 'X-Observability-Query-Id': queryId, ...(ticket ? { 'X-Live-Tail-Ticket': ticket } : {}) } }, PAGE_BYTES);
+            return await client.request(path, {
+                signal,
+                headers: { 'X-Observability-Query-Id': queryId, ...(ticket ? { 'X-Live-Tail-Ticket': ticket } : {}) },
+                ...(!options.follow && predicates ? { method: 'POST', body: predicates } : {}),
+            }, PAGE_BYTES);
         }
         catch (error) {
             if (signal.aborted || (error instanceof CliError && error.exitCode === EXIT.network)) {
@@ -310,11 +316,11 @@ export async function readLogs(client, options, emit, interruptSignal, pause = a
             try {
                 for (let pages = 0; pages < 10 && !signal.aborted && count < options.maxEvents && (options.follow || totalPages < 1000); pages++) {
                     const requested = Math.min(Number(options.filters.limit), options.maxEvents - count);
-                    const query = new URLSearchParams(options.follow ? {} : options.filters);
+                    const query = new URLSearchParams(options.follow ? {} : scalarFilters);
                     query.set('limit', String(requested));
                     if (cursor)
                         query.set('cursor', cursor);
-                    const batch = page(await requestPage(base + (options.follow ? 'live-tail/' : 'logs/') + '?' + query));
+                    const batch = page(await requestPage(base + (options.follow ? 'live-tail/' : historyPath) + '?' + query));
                     totalPages++;
                     if (batch.events.length > requested)
                         throw new CliError('Log page exceeded its requested row bound.', EXIT.remote, 'invalid_log_response');
