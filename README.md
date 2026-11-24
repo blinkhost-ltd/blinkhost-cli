@@ -7,7 +7,7 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.9.0
+npm install --global @blinkhost/cli@2.9.1
 blinkhost --version
 ```
 
