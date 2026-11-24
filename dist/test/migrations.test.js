@@ -161,6 +161,33 @@ test('an unchanged applied review verifies by GET and never resubmits the migrat
     assert.ok(f.requests.at(-1).url.endsWith('/plan/'));
     assert.equal(f.writes().length, 1);
 });
+test('status reads legacy unplanned rows without checksums and requires checksums for reviewed work', async (t) => {
+    const f = await fixture(t);
+    f.state.phase = 'unplanned';
+    f.state.statusChecksum = null;
+    for (const status of ['pending', 'failed', 'rolled_back']) {
+        f.state.status = status;
+        assert.deepEqual(await f.status(), { migration_id: migration, status, phase: 'unplanned', checksum: null });
+    }
+    const bad = (e) => e instanceof CliError && e.code === 'invalid_migration_response';
+    f.state.status = 'pending';
+    for (const invalidChecksum of [undefined, 'invalid']) {
+        f.state.statusChecksum = invalidChecksum;
+        await assert.rejects(f.status(), bad);
+    }
+    f.state.statusChecksum = null;
+    for (const phase of ['planned', 'dispatched']) {
+        f.state.phase = phase;
+        await assert.rejects(f.status(), bad);
+    }
+    f.state.status = 'applied';
+    f.state.verification = 'fresh_primary_history';
+    await assert.rejects(f.status(), bad);
+    assert.equal(f.writes().length, 0);
+    const { review_sha256 } = await f.plan();
+    await assert.rejects(f.apply(review_sha256), bad);
+    assert.equal(f.writes().length, 1);
+});
 test('malformed, unreviewed or wrong-target API data is rejected before apply', async (t) => {
     const f = await fixture(t);
     const { review_sha256 } = await f.plan();

@@ -43,7 +43,7 @@ async function fixture(t: TestContext) {
   const state = {
     workspace: '7', project, token: 'synthetic-review-1', planStatus: 'pending', failPlan: 0,
     failApply: 0, loseApply: false, status: 'pending', phase: 'planned', verification: undefined as string | undefined,
-    statusId: migration, statusChecksum: hash(sql),
+    statusId: migration, statusChecksum: hash(sql) as string | null | undefined,
   };
   const reply = () => ({ migration_id: state.statusId, checksum: state.statusChecksum, status: state.status, phase: state.phase,
     ...(state.verification ? { verification: state.verification } : {}) });
@@ -149,6 +149,34 @@ test('an unchanged applied review verifies by GET and never resubmits the migrat
   }
   await assert.rejects(f.apply('0'.repeat(64)), (e: unknown) => e instanceof CliError && e.code === 'migration_review_changed');
   assert.ok(f.requests.at(-1)!.url.endsWith('/plan/'));
+  assert.equal(f.writes().length, 1);
+});
+
+test('status reads legacy unplanned rows without checksums and requires checksums for reviewed work', async t => {
+  const f = await fixture(t);
+  f.state.phase = 'unplanned';
+  f.state.statusChecksum = null;
+  for (const status of ['pending', 'failed', 'rolled_back']) {
+    f.state.status = status;
+    assert.deepEqual(await f.status(), { migration_id: migration, status, phase: 'unplanned', checksum: null });
+  }
+  const bad = (e: unknown) => e instanceof CliError && e.code === 'invalid_migration_response';
+  f.state.status = 'pending';
+  for (const invalidChecksum of [undefined, 'invalid']) {
+    f.state.statusChecksum = invalidChecksum;
+    await assert.rejects(f.status(), bad);
+  }
+  f.state.statusChecksum = null;
+  for (const phase of ['planned', 'dispatched']) {
+    f.state.phase = phase;
+    await assert.rejects(f.status(), bad);
+  }
+  f.state.status = 'applied';
+  f.state.verification = 'fresh_primary_history';
+  await assert.rejects(f.status(), bad);
+  assert.equal(f.writes().length, 0);
+  const { review_sha256 } = await f.plan();
+  await assert.rejects(f.apply(review_sha256), bad);
   assert.equal(f.writes().length, 1);
 });
 

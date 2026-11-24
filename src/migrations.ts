@@ -99,7 +99,9 @@ function result(value: unknown, id: string, expectedChecksum?: string) {
   const row = record(value);
   const status = string(row.status);
   const phase = string(row.phase);
-  const checksum = string(row.checksum, HASH);
+  // Older migration metadata can predate both a native plan and a SQL checksum.
+  const unplannedStatus = expectedChecksum === undefined && phase === 'unplanned' && status !== 'applied';
+  const checksum = unplannedStatus && row.checksum === null ? null : string(row.checksum, HASH);
   if (row.migration_id !== id || !statuses.includes(status) || !['unplanned', 'planned', 'dispatched'].includes(phase)
       || (expectedChecksum && (status !== 'applied' || expectedChecksum !== checksum))
       || (status === 'applied' ? phase !== 'dispatched' || row.verification !== 'fresh_primary_history' : row.verification !== undefined)) return malformed();

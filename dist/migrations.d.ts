@@ -3,7 +3,7 @@ export declare function runMigrations(args: string[], profile?: string): Promise
     migration_id: string;
     status: string;
     phase: string;
-    checksum: string;
+    checksum: string | null;
 } | {
     review: {
         project: {
