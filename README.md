@@ -7,7 +7,7 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.8.1
+npm install --global @blinkhost/cli@2.9.0
 blinkhost --version
 ```
 
@@ -931,6 +931,23 @@ blinkhost previews delete PREVIEW_ID --confirm PREVIEW_ID
 ```
 
 Connected repository, release, approval, agency handoff, enterprise policy, and template APIs are available through `repositories`, `connections`, `builds`, `approvals`, `handoffs`, `policies`, and `templates`. Advanced customer API operations can use `blinkhost api METHOD /api/path/`; internal, staff, and authentication routes are blocked.
+
+## Managed database migrations
+
+Sign in with a customer CLI profile that can access the project and its managed database. Plan and apply require `resources:write`. Status requires `resources:read`. The CLI uses `projects:read` to look up the workspace. To select it directly, pass `--organization WORKSPACE_ID` to each command. Select `development`, `preview` or `production` explicitly. To prepare a proposal, give it an integer version from 1 to 10000 and a UTF-8 SQL file up to 16 KiB.
+
+```bash
+blinkhost migrations plan PROJECT_UUID --environment preview --version 12 --file ./012_orders.sql
+```
+
+Read the workspace, project, database and binding IDs, generation, exact SQL, target schema and before/after hashes in the output. The plan records a proposal. The database schema changes when you apply it. Copy the migration UUID and `review_sha256` from the reviewed output.
+
+```bash
+blinkhost migrations apply PROJECT_UUID MIGRATION_UUID --environment preview --version 12 --file ./012_orders.sql --confirm-review REVIEW_SHA256
+blinkhost migrations status PROJECT_UUID MIGRATION_UUID --environment preview
+```
+
+Apply obtains a fresh signed review through the customer API. The CLI compares the digest and migration ID before submitting the change. Review tokens stay in process memory. After a timeout or an interrupted apply, check status before retrying. An applied result includes `fresh_primary_history` after the API confirms the primary database record. All three commands support `--json` and `--profile`.
 
 ## Function triggers and runs
 
