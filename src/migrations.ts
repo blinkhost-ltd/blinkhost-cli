@@ -102,7 +102,7 @@ function result(value: unknown, id: string, expectedChecksum?: string) {
   const checksum = string(row.checksum, HASH);
   if (row.migration_id !== id || !statuses.includes(status) || !['unplanned', 'planned', 'dispatched'].includes(phase)
       || (expectedChecksum && (status !== 'applied' || expectedChecksum !== checksum))
-      || (status === 'applied' ? row.verification !== 'fresh_primary_history' : row.verification !== undefined)) return malformed();
+      || (status === 'applied' ? phase !== 'dispatched' || row.verification !== 'fresh_primary_history' : row.verification !== undefined)) return malformed();
   return { migration_id: id, status, phase, checksum, ...(status === 'applied' ? { verification: 'fresh_primary_history' } : {}) };
 }
 
@@ -150,9 +150,9 @@ export async function runMigrations(args: string[], profile?: string) {
   const path = `/api/migrations/projects/${project}/`;
   const headers = { 'X-Organization-Id': workspace };
   const recovery = `blinkhost migrations status ${project} ${id} --environment ${environment} --organization ${workspace} --profile ${client.profileName}`;
-  if (action === 'status') {
-    return result(await client.request(path + id + '/status/?environment=' + environment, { headers }, 16384), id!);
-  }
+  const status = async (migrationId: string, checksum?: string) => result(await client.request(
+    path + migrationId + '/status/?environment=' + environment, { headers }, 16384), migrationId, checksum);
+  if (action === 'status') return status(id!);
   const body = JSON.stringify({ environment, version, sql, expected_checksum: hash(sql) });
   const plan = readReview(await client.request(path + 'plan/', { method: 'POST', headers, body }, 2 * 1024 * 1024),
     project, environment, version, sql);
@@ -161,11 +161,12 @@ export async function runMigrations(args: string[], profile?: string) {
   if (action === 'plan') {
     return { migration_id: plan.review.migration_id, status: plan.status, ...scope, review: plan.review, review_sha256: digest };
   }
-  if (plan.review.migration_id !== id || digest !== confirmation || plan.status !== 'pending') {
+  if (plan.review.migration_id !== id || digest !== confirmation || !['pending', 'applied'].includes(plan.status)) {
     throw new CliError('The selected migration, plan or status differs. Inspect its status and review a new plan.',
       EXIT.conflict, 'migration_review_changed', [recovery]);
   }
   try {
+    if (plan.status === 'applied') return await status(id!, plan.review.checksum);
     const applied = await client.request(path + id + '/apply/', { method: 'POST', headers,
       body: JSON.stringify({ environment, review_token: plan.token, confirm: true }) }, 16384);
     return result(applied, id!, plan.review.checksum);

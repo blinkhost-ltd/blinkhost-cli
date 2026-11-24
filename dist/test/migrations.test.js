@@ -47,8 +47,9 @@ async function fixture(t) {
     const state = {
         workspace: '7', project, token: 'synthetic-review-1', planStatus: 'pending', failPlan: 0,
         failApply: 0, loseApply: false, status: 'pending', phase: 'planned', verification: undefined,
+        statusId: migration, statusChecksum: hash(sql),
     };
-    const reply = () => ({ migration_id: migration, checksum: hash(sql), status: state.status, phase: state.phase,
+    const reply = () => ({ migration_id: state.statusId, checksum: state.statusChecksum, status: state.status, phase: state.phase,
         ...(state.verification ? { verification: state.verification } : {}) });
     globalThis.fetch = async (url, init) => {
         const req = new Request(url, init);
@@ -126,7 +127,8 @@ test('changed workspace, project name, generation, hashes, sources, schema, migr
     for (const [object, key, replacement] of [
         [f.state, 'workspace', '8'], [f.review.project, 'name', 'Renamed'], [f.review.identity, 'generation', 'gen-2'],
         [f.review, 'before_sha256', 'f'.repeat(64)], [f.review, 'after_sha256', '0'.repeat(64)],
-        [f.review, 'schema_sources', {}], [f.review, 'target_schema_sql', ''], [f.state, 'planStatus', 'applied'],
+        [f.review, 'schema_sources', {}], [f.review, 'target_schema_sql', ''], [f.state, 'planStatus', 'failed'],
+        [f.state, 'planStatus', 'rolled_back'],
     ]) {
         const prior = object[key];
         object[key] = replacement;
@@ -136,6 +138,28 @@ test('changed workspace, project name, generation, hashes, sources, schema, migr
     await assert.rejects(f.apply(digest, project), changed);
     await assert.rejects(f.apply('0'.repeat(64)), changed);
     assert.equal(f.writes().length, 0);
+});
+test('an unchanged applied review verifies by GET and never resubmits the migration', async (t) => {
+    const f = await fixture(t);
+    const { review_sha256: digest } = await f.plan();
+    const applied = await f.apply(digest);
+    Object.assign(f.state, { planStatus: 'applied', status: 'applied', phase: 'dispatched', verification: 'fresh_primary_history' });
+    assert.deepEqual(await f.apply(digest), applied);
+    assert.equal(f.requests.at(-1).method, 'GET');
+    assert.ok(new URL(f.requests.at(-1).url).pathname.endsWith(migration + '/status/'));
+    for (const [key, replacement] of [
+        ['status', 'pending'], ['status', 'failed'], ['phase', 'planned'], ['phase', 'unplanned'],
+        ['verification', 'cached'], ['verification', undefined], ['statusChecksum', hash('another migration')], ['statusId', project],
+    ]) {
+        const state = f.state;
+        const original = state[key];
+        state[key] = replacement;
+        await assert.rejects(f.apply(digest), (e) => e instanceof CliError && e.code === 'invalid_migration_response');
+        state[key] = original;
+    }
+    await assert.rejects(f.apply('0'.repeat(64)), (e) => e instanceof CliError && e.code === 'migration_review_changed');
+    assert.ok(f.requests.at(-1).url.endsWith('/plan/'));
+    assert.equal(f.writes().length, 1);
 });
 test('malformed, unreviewed or wrong-target API data is rejected before apply', async (t) => {
     const f = await fixture(t);

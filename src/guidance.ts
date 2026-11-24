@@ -50,7 +50,7 @@ const TOPICS: Record<string, DocumentationTopic> = {
     details: ['Choose development, preview or production explicitly. Supply UTF-8 SQL up to 16 KiB and a version from 1 to 10000.',
       'The CLI looks up the workspace with projects:read. Supply --organization WORKSPACE_ID to select it directly. Plan and apply require resources:write. Status requires resources:read.',
       'Read the SQL, target schema, project, database and hashes in the plan. Apply refreshes the review and requires the same inputs and complete review digest.',
-      'Use status after a timeout. An applied status includes fresh verification against primary migration history.'],
+      'Use status after a timeout. An identical apply of an already applied migration reads fresh primary history without submitting the change again.'],
     examples: ['blinkhost migrations plan PROJECT_UUID --environment preview --version 12 --file ./012_orders.sql --json'],
     related: ['databases', 'projects', 'auth'], url: DOCUMENTATION_URL,
   },

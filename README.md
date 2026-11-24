@@ -947,7 +947,7 @@ blinkhost migrations apply PROJECT_UUID MIGRATION_UUID --environment preview --v
 blinkhost migrations status PROJECT_UUID MIGRATION_UUID --environment preview
 ```
 
-Apply obtains a fresh signed review through the customer API. The CLI compares the digest and migration ID before submitting the change. Review tokens stay in process memory. After a timeout or an interrupted apply, check status before retrying. An applied result includes `fresh_primary_history` after the API confirms the primary database record. All three commands support `--json` and `--profile`.
+Apply obtains a fresh signed review through the customer API. The CLI compares the digest and migration ID before submitting the change. If the reviewed migration has already been applied, the CLI reads its verified status without submitting another apply. Review tokens stay in process memory. After a timeout or an interrupted apply, check status before retrying. An applied result includes `fresh_primary_history` after the API confirms the primary database record. All three commands support `--json` and `--profile`.
 
 ## Function triggers and runs
 
