@@ -13,6 +13,12 @@ blinkhost --version
 
 Signed release archives, checksums, the CycloneDX SBOM, and Sigstore verification bundle are available at <https://github.com/blinkhost-ltd/blinkhost-cli/releases>.
 
+## Build a CMS or an agent workflow
+
+Start a customizable newsroom with separate draft and published views, or build a support agent that routes tickets to a queue. Both kits run in your application with your own data, permissions and provider accounts.
+
+Use Node.js 22.18 or newer for the kits. The release includes verified installation instructions, starter commands and an optional SDK adapter. [CMS and agent workflow kits v0.1.1](https://github.com/blinkhost-ltd/blinkhost-cli/releases/tag/app-helpers-v0.1.1)
+
 ## 2.7.0 — UI and design references
 
 Search reviewed design guidance and code in the context of an accessible project:
