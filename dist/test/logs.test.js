@@ -224,7 +224,7 @@ test('expiry aborts an in-flight follow request, cancels only its owned query an
                 return { closed: true };
             }
             queryId = new Headers(init?.headers).get('X-Observability-Query-Id');
-            // A real timer keeps the test alive; AbortSignal.timeout itself is unref'ed.
+            // Keep the event loop alive while the unref'ed deadline is pending.
             await new Promise((_resolve, reject) => {
                 const guard = setTimeout(() => reject(new Error('expiry did not abort')), 1000);
                 init.signal.addEventListener('abort', () => { clearTimeout(guard); reject(new Error('aborted')); }, { once: true });
@@ -287,24 +287,31 @@ test('terminal writes await callbacks, stop on interruption and detach listeners
     assert.equal(removed, 1);
 });
 test('the historical deadline aborts an in-flight read and independently cancels its query', async (t) => {
-    const original = AbortSignal.timeout.bind(AbortSignal), timeouts = [];
-    t.mock.method(AbortSignal, 'timeout', (ms) => { timeouts.push(ms); return original(ms === 120_000 ? 35 : ms); });
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const cancelDeadline = t.mock.method(AbortSignal, 'timeout');
     let owned = '', cancelled = '';
     const record = recorder();
-    await readLogs({ async request(path, init) {
+    let readSignal;
+    const reading = readLogs({ async request(path, init) {
             if (path.includes('/cancel/')) {
                 cancelled = path;
                 assert.equal(init?.signal?.aborted, false);
                 return { cancelled: true };
             }
             owned = new Headers(init?.headers).get('X-Observability-Query-Id');
+            const signal = readSignal = init.signal;
             await new Promise((_resolve, reject) => {
-                const guard = setTimeout(() => reject(new Error('historical deadline did not abort')), 1000);
-                init.signal.addEventListener('abort', () => { clearTimeout(guard); reject(new Error('deadline')); }, { once: true });
+                signal.addEventListener('abort', () => reject(new Error('deadline')), { once: true });
             });
         } }, options(), record.emit, new AbortController().signal);
+    assert.ok(readSignal);
+    t.mock.timers.tick(119_999);
+    assert.equal(readSignal.aborted, false);
+    t.mock.timers.tick(1);
+    assert.equal(readSignal.aborted, true);
+    await reading;
     assert.equal(cancelled, `/api/observability-query-leases/${owned}/cancel/`);
-    assert.deepEqual(timeouts, [120_000, 5000]);
+    assert.deepEqual(cancelDeadline.mock.calls.map(call => call.arguments), [[5000]]);
     assert.ok(record.entries.some(e => e.kind === 'summary' && e.reason === 'time limit reached'));
 });
 test('loopback API uses authentication, exact ticket filters, scoped pagination and bounded bodies', async () => {

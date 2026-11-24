@@ -199,7 +199,11 @@ export async function writeLogOutput(output: Pick<NodeJS.WriteStream, 'write'>, 
 /** Stream one bounded page at a time; every write is awaited by the caller. */
 export async function readLogs(client: LogClient, options: LogOptions & { project: string }, emit: (entry: LogEntry, signal: AbortSignal) => Promise<void>, interruptSignal: AbortSignal,
   pause: (ms: number, signal: AbortSignal) => Promise<void> = async (ms, abort) => { await wait(ms, undefined, { signal: abort }); }): Promise<void> {
-  let signal = options.follow ? interruptSignal : AbortSignal.any([interruptSignal, AbortSignal.timeout(120_000)]);
+  const deadline = new AbortController();
+  const signal = AbortSignal.any([interruptSignal, deadline.signal]);
+  // Keep the deadline active even while a terminal write is waiting for its reader.
+  const expire = () => deadline.abort();
+  let deadlineTimer = options.follow ? undefined : setTimeout(expire, 120_000).unref();
   const stopReason = () => interruptSignal.aborted ? 'interrupted' : options.follow ? 'live-tail ticket expired' : 'time limit reached';
   const base = `/api/sites/${options.project}/observability/`;
   let ticket = '', expires = Infinity, count = 0, duplicates = 0, watermark = '', nextCursor: string | null = options.cursor || null, more = false, reason = 'history exhausted';
@@ -240,7 +244,7 @@ export async function readLogs(client: LogClient, options: LogOptions & { projec
       if (typeof data.ticket === 'string' && data.ticket.length <= 256) ticket = data.ticket;
       expires = typeof data.expires_at === 'string' ? Date.parse(data.expires_at) : NaN;
       if (!ticket || !Number.isFinite(expires) || expires <= Date.now()) throw new CliError('Invalid or expired live-tail ticket.', EXIT.remote, 'invalid_log_response');
-      signal = AbortSignal.any([interruptSignal, AbortSignal.timeout(Math.max(1, Math.min(expires - Date.now(), 2_147_483_647)))]);
+      deadlineTimer = setTimeout(expire, Math.max(1, Math.min(expires - Date.now(), 2_147_483_647))).unref();
       await notice('best_effort_follow', 'Follow deduplicates up to 1000 recent IDs and reads at most ten pages per poll. Late arrivals, interruptions and full windows can leave gaps; use retained history.');
     }
     let failures = 0;
@@ -295,9 +299,13 @@ export async function readLogs(client: LogClient, options: LogOptions & { projec
     if (!signal.aborted) throw error;
     await emit({ kind: 'summary', events: count, duplicates_skipped: duplicates, reason: stopReason(), filters: options.filters, has_more: more, next_cursor: options.follow ? null : nextCursor }, signal);
   } finally {
-    if (ticket) {
-      try { await client.request(base + 'live-tail/', { method: 'DELETE', headers: { 'X-Live-Tail-Ticket': ticket }, signal: AbortSignal.timeout(5000) }, PAGE_BYTES); }
-      catch { await notice('ticket_close_unconfirmed', 'Live-tail closure could not be confirmed; its server expiry still applies.'); }
+    try {
+      if (ticket) {
+        try { await client.request(base + 'live-tail/', { method: 'DELETE', headers: { 'X-Live-Tail-Ticket': ticket }, signal: AbortSignal.timeout(5000) }, PAGE_BYTES); }
+        catch { await notice('ticket_close_unconfirmed', 'Live-tail closure could not be confirmed; its server expiry still applies.'); }
+      }
+    } finally {
+      clearTimeout(deadlineTimer);
     }
   }
 }

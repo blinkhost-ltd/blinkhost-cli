@@ -6,6 +6,8 @@ This file records customer-visible CLI changes. BlinkHost uses semantic versioni
 
 Use `--project-source` on migration plan and apply to select a numbered SQL file from the project. The review includes its path and exact SQL.
 
+Live log streams now release their ticket and exit on Node.js 22.12 when the output reader stops consuming data.
+
 ## 2.9.1 — Historical migration status
 
 `blinkhost migrations status` can now read older, unplanned migration records that have no SQL checksum. Reviewed and applied migrations still require a matching checksum.
