@@ -2,6 +2,10 @@
 
 This file records customer-visible CLI changes. BlinkHost uses semantic versioning for the CLI, while security and migration impact are classified separately. A patch may therefore require prompt action, and a major release may coexist with an earlier supported line during its documented migration window.
 
+## 2.9.0 — Managed database migrations
+
+Use `blinkhost migrations plan` to review a SQL file against a project database. Apply the reviewed change with its SHA-256 digest, then use `blinkhost migrations status` to verify the result against the primary database. The commands use the customer API and an ordinary CLI profile.
+
 ## 2.8.1 — Historical log field search
 
 `blinkhost logs --attribute-filters` sends typed conditions in a JSON request body.

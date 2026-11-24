@@ -8,7 +8,7 @@ export interface DocumentationTopic {
     related: string[];
     url: string;
 }
-export declare const TOP_LEVEL_COMMANDS: ("plugins" | "profile" | "builds" | "modules" | "dev" | "databases" | "secrets" | "manifest" | "test" | "projects" | "repositories" | "connections" | "previews" | "deployments" | "bindings" | "assets" | "organizations" | "templates" | "approvals" | "handoffs" | "policies" | "workloads" | "create" | "update" | "design" | "ai" | "seo" | "ci" | "auth" | "quickstart" | "init" | "doctor" | "validate" | "functions" | "test-credentials" | "logs" | "metrics" | "analytics" | "support" | "completion" | "api" | "docs")[];
+export declare const TOP_LEVEL_COMMANDS: ("plugins" | "profile" | "builds" | "modules" | "dev" | "databases" | "secrets" | "migrations" | "manifest" | "test" | "projects" | "repositories" | "connections" | "previews" | "deployments" | "bindings" | "assets" | "organizations" | "templates" | "approvals" | "handoffs" | "policies" | "workloads" | "create" | "update" | "auth" | "design" | "ai" | "seo" | "ci" | "quickstart" | "init" | "doctor" | "validate" | "functions" | "test-credentials" | "logs" | "metrics" | "analytics" | "support" | "completion" | "api" | "docs")[];
 export declare function documentationIndex(): {
     schema: string;
     cli_version: string;

@@ -27,6 +27,19 @@ const resource = (name, summary, extra = []) => ({
     url: DOCUMENTATION_URL,
 });
 const TOPICS = {
+    migrations: {
+        name: 'migrations', title: 'Managed database migrations',
+        summary: 'Review an exact SQL migration, apply it to the selected environment, and verify its status.',
+        usage: ['blinkhost migrations plan PROJECT_UUID --environment ENV --version N --file PATH',
+            'blinkhost migrations apply PROJECT_UUID MIGRATION_UUID --environment ENV --version N --file PATH --confirm-review SHA256',
+            'blinkhost migrations status PROJECT_UUID MIGRATION_UUID --environment ENV'],
+        details: ['Choose development, preview or production explicitly. Supply UTF-8 SQL up to 16 KiB and a version from 1 to 10000.',
+            'The CLI looks up the workspace with projects:read. Supply --organization WORKSPACE_ID to select it directly. Plan and apply require resources:write. Status requires resources:read.',
+            'Read the SQL, target schema, project, database and hashes in the plan. Apply refreshes the review and requires the same inputs and complete review digest.',
+            'Use status after a timeout. An identical apply of an already applied migration reads fresh primary history without submitting the change again.'],
+        examples: ['blinkhost migrations plan PROJECT_UUID --environment preview --version 12 --file ./012_orders.sql --json'],
+        related: ['databases', 'projects', 'auth'], url: DOCUMENTATION_URL,
+    },
     design: {
         name: 'design', title: 'UI and design references',
         summary: 'Search reviewed design guidance and code through your authenticated project.',
@@ -276,7 +289,7 @@ const TOPICS = {
     },
 };
 const COMMANDS = [
-    'quickstart', 'docs', 'design', 'create', 'init', 'validate', 'manifest', 'doctor', 'test', 'auth', 'ai', 'profile', 'projects',
+    'quickstart', 'docs', 'design', 'migrations', 'create', 'init', 'validate', 'manifest', 'doctor', 'test', 'auth', 'ai', 'profile', 'projects',
     'repositories', 'connections', 'previews', 'builds', 'deployments', 'modules', 'functions', 'databases', 'bindings', 'assets',
     'secrets', 'test-credentials', 'organizations', 'templates', 'approvals', 'handoffs', 'policies', 'workloads', 'dev', 'logs', 'metrics',
     'analytics', 'seo', 'support', 'completion', 'update', 'ci', 'plugins', 'api',
