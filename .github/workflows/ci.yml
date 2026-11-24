@@ -33,3 +33,9 @@ jobs:
         run: npm audit --omit=dev --audit-level=moderate
       - name: Build distributable package
         run: npm pack --ignore-scripts
+      - name: Select the oldest supported Node.js for log lifecycle checks
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22.12.0'
+      - name: Verify log lifecycle on Node.js 22.12
+        run: node --test dist/test/logs.test.js dist/test/logs_process.test.js
