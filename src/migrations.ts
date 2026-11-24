@@ -69,19 +69,28 @@ async function readSql(path: string): Promise<string> {
   }
 }
 
-function readReview(value: unknown, project: string, environment: string, version: number, sql: string) {
+function readReview(value: unknown, project: string, environment: string, version: number, localSql?: string) {
   const plan = record(value);
   const source = record(plan.review);
   const tenant = record(source.project);
   const identity = record(source.identity);
   const migrationId = string(plan.migration_id, UUID);
+  const sql = string(source.sql);
+  const projectFile = localSql === undefined;
+  let sourcePath: string | undefined;
+  if (projectFile) {
+    sourcePath = string(source.source_path);
+    const match = /^database\/DEFAULT\/migrations\/([0-9]+)_[a-zA-Z0-9_]+\.sql$/.exec(sourcePath);
+    if (!match || match[0] !== sourcePath || Number(match[1]) !== version || !sql.trim() || sql.includes('\0')
+        || Buffer.byteLength(sql, 'utf8') > SQL_LIMIT || Buffer.from(sql, 'utf8').toString('utf8') !== sql) return malformed();
+  } else if (sql !== localSql) return malformed();
   if (tenant.id !== project || source.environment !== environment || source.version !== version
-      || source.migration_id !== migrationId || source.sql !== sql || source.checksum !== hash(sql)) return malformed();
+      || source.migration_id !== migrationId || source.checksum !== hash(sql)) return malformed();
   const sources = Object.entries(record(source.schema_sources)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
   const schemaSources = Object.fromEntries(sources.map(([key, digest]) => [key, digest === null ? null : string(digest, HASH)]));
   const review = {
     project: { id: project, name: string(tenant.name) }, migration_id: migrationId, environment, version,
-    checksum: hash(sql), sql,
+    checksum: hash(sql), sql, ...(projectFile ? { source_path: sourcePath } : {}),
     identity: { database_id: string(identity.database_id, /\S/), binding_id: string(identity.binding_id, /\S/), generation: string(identity.generation, /\S/) },
     before_sha256: string(source.before_sha256, HASH), after_sha256: string(source.after_sha256, HASH),
     schema_sources: schemaSources, target_schema_sql: string(source.target_schema_sql),
@@ -118,7 +127,7 @@ export async function runMigrations(args: string[], profile?: string) {
   if (action !== 'plan' && (!id || !UUID.test(id))) return invalid('Supply the migration UUID from plan.');
   const options = {
     environment: { type: 'string' }, organization: { type: 'string' },
-    version: { type: 'string' }, file: { type: 'string' }, 'confirm-review': { type: 'string' },
+    version: { type: 'string' }, file: { type: 'string' }, 'project-source': { type: 'boolean' }, 'confirm-review': { type: 'string' },
   } as const;
   let values;
   try {
@@ -128,7 +137,7 @@ export async function runMigrations(args: string[], profile?: string) {
     values = parsed.values;
   } catch { return invalid('Invalid migration options. See blinkhost help migrations.'); }
   if (action !== 'apply' && values['confirm-review'] !== undefined
-      || action === 'status' && (values.version !== undefined || values.file !== undefined)) {
+      || action === 'status' && (values.version !== undefined || values.file !== undefined || values['project-source'])) {
     return invalid('Unexpected option for this migration command.');
   }
   const environment = values.environment;
@@ -136,8 +145,9 @@ export async function runMigrations(args: string[], profile?: string) {
     return invalid('Specify --environment development, preview or production.');
   }
   const version = Number(values.version);
-  if (action !== 'status' && (!/^[1-9]\d{0,4}$/.test(values.version || '') || version > 10000 || !values.file)) {
-    return invalid('Specify --version 1 through 10000 and --file PATH.');
+  if (action !== 'status' && (!/^[1-9]\d{0,4}$/.test(values.version || '') || version > 10000
+      || Boolean(values['project-source']) === (values.file !== undefined) || values.file === '')) {
+    return invalid('Specify --version 1 through 10000 and exactly one of --file PATH or --project-source.');
   }
   const confirmation = values['confirm-review'];
   if (action === 'apply' && (!confirmation || !HASH.test(confirmation))) {
@@ -146,7 +156,7 @@ export async function runMigrations(args: string[], profile?: string) {
   if (values.organization !== undefined && !/^[1-9]\d{0,18}$/.test(values.organization)) {
     return invalid('Use a positive numeric workspace ID with --organization.');
   }
-  const sql = action === 'status' ? '' : await readSql(values.file!);
+  const sql = values.file === undefined ? undefined : await readSql(values.file);
   const client = await ApiClient.create(profile);
   const workspace = await resolveWorkspace(client, project, values.organization);
   const path = `/api/migrations/projects/${project}/`;
@@ -155,7 +165,8 @@ export async function runMigrations(args: string[], profile?: string) {
   const status = async (migrationId: string, checksum?: string) => result(await client.request(
     path + migrationId + '/status/?environment=' + environment, { headers }, 16384), migrationId, checksum);
   if (action === 'status') return status(id!);
-  const body = JSON.stringify({ environment, version, sql, expected_checksum: hash(sql) });
+  const body = JSON.stringify({ environment, version, ...(sql === undefined
+    ? { source: 'project' } : { sql, expected_checksum: hash(sql) }) });
   const plan = readReview(await client.request(path + 'plan/', { method: 'POST', headers, body }, 2 * 1024 * 1024),
     project, environment, version, sql);
   const scope = { api_origin: client.profile.apiOrigin, organization_id: workspace };

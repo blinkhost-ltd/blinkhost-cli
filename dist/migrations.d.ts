@@ -6,15 +6,6 @@ export declare function runMigrations(args: string[], profile?: string): Promise
     checksum: string | null;
 } | {
     review: {
-        project: {
-            id: string;
-            name: string;
-        };
-        migration_id: string;
-        environment: string;
-        version: number;
-        checksum: string;
-        sql: string;
         identity: {
             database_id: string;
             binding_id: string;
@@ -26,6 +17,16 @@ export declare function runMigrations(args: string[], profile?: string): Promise
             [k: string]: string | null;
         };
         target_schema_sql: string;
+        source_path?: string | undefined;
+        project: {
+            id: string;
+            name: string;
+        };
+        migration_id: string;
+        environment: string;
+        version: number;
+        checksum: string;
+        sql: string;
     };
     review_sha256: string;
     api_origin: string;

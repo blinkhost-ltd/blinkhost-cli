@@ -7,7 +7,7 @@ The BlinkHost CLI brings project setup, local development, source control, previ
 Node.js 22.12 or newer is required.
 
 ```bash
-npm install --global @blinkhost/cli@2.9.1
+npm install --global @blinkhost/cli@2.10.0
 blinkhost --version
 ```
 
@@ -933,6 +933,8 @@ blinkhost previews delete PREVIEW_ID --confirm PREVIEW_ID
 Connected repository, release, approval, agency handoff, enterprise policy, and template APIs are available through `repositories`, `connections`, `builds`, `approvals`, `handoffs`, `policies`, and `templates`. Advanced customer API operations can use `blinkhost api METHOD /api/path/`; internal, staff, and authentication routes are blocked.
 
 ## Managed database migrations
+
+CLI 2.10.0 accepts a local SQL file or a numbered migration saved in your project. To use a saved file, pass `--project-source` to both plan and apply. This requires `projects:read` in addition to migration access. BlinkHost resolves the version in `database/DEFAULT/migrations/`. Review the returned path, SQL, environment and checksum before applying. Use `--file PATH` for SQL on your own machine.
 
 Sign in with a customer CLI profile that can access the project and its managed database. Plan and apply require `resources:write`. Status requires `resources:read`. The CLI uses `projects:read` to look up the workspace. To select it directly, pass `--organization WORKSPACE_ID` to each command. Select `development`, `preview` or `production` explicitly. To prepare a proposal, give it an integer version from 1 to 10000 and a UTF-8 SQL file up to 16 KiB.
 
