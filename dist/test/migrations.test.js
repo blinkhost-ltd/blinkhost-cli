@@ -259,4 +259,34 @@ test('normal CLI JSON, human help and shell automation expose only the reviewed 
     output = JSON.parse(chunks.join(''));
     assert.equal(output.data.status, 'pending');
 });
+test('saved project files bind returned path and SQL to the reviewed digest', async (t) => {
+    const f = await fixture(t);
+    const options = ['--environment', 'preview', '--version', '12', '--project-source'];
+    const source = Object.assign(f.review, { source_path: 'database/DEFAULT/migrations/012_orders.sql' });
+    const plan = () => runMigrations(['plan', project, ...options]);
+    const first = await plan();
+    assert.ok('review_sha256' in first);
+    assert.deepEqual(first.review, source);
+    assert.deepEqual(await f.requests.at(-1).clone().json(), { environment: 'preview', version: 12, source: 'project' });
+    const apply = () => runMigrations(['apply', project, migration, ...options, '--confirm-review', first.review_sha256]);
+    source.source_path = 'database/DEFAULT/migrations/12_renamed.sql';
+    await assert.rejects(apply(), (e) => e instanceof CliError && e.code === 'migration_review_changed');
+    source.source_path = 'database/DEFAULT/migrations/012_orders.sql';
+    source.sql += ' ';
+    await assert.rejects(plan(), (e) => e instanceof CliError && e.code === 'invalid_migration_response');
+    source.checksum = hash(source.sql);
+    await assert.rejects(apply(), (e) => e instanceof CliError && e.code === 'migration_review_changed');
+    assert.equal(f.writes().length, 0);
+    source.sql = sql;
+    source.checksum = hash(sql);
+    assert.equal((await apply()).status, 'applied');
+    for (const path of ['../012_orders.sql', 'database/DEFAULT/migrations/013_orders.sql', 'database/DEFAULT/migrations/012_orders.sql\n']) {
+        source.source_path = path;
+        await assert.rejects(plan(), (e) => e instanceof CliError && e.code === 'invalid_migration_response');
+    }
+    const count = f.requests.length;
+    await assert.rejects(runMigrations(['plan', project, ...options, '--file', f.path]), CliError);
+    await assert.rejects(runMigrations(['status', project, migration, '--environment', 'preview', '--project-source']), CliError);
+    assert.equal(f.requests.length, count);
+});
 //# sourceMappingURL=migrations.test.js.map
